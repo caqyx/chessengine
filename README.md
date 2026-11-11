@@ -96,6 +96,8 @@ engine/web/                engine.wasm + engine-worker.js used by the game
 docs/engine-protocol.md    contract between game and engine worker
 tools/match.py             engine-vs-engine match runner
 tools/tuner.cpp            fits the evaluation weights to self-play games
+tools/gen_data.py          generates self-play data on your own machine, stop and resume freely (docs/training.md)
+tools/fit_wdl.py           fits the win/draw/loss model shown in the game
 data/                      4 million self-play positions with scores and results
 ```
 
