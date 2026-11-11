@@ -1,0 +1,40 @@
+# Builds tessera.exe for Windows and publishes it as a downloadable file:
+#   https://github.com/caqyx/chessengine/releases/download/windows-build/tessera.exe
+# Runs when the engine sources change, or by hand from the Actions tab.
+name: Windows build
+
+on:
+  push:
+    branches: [main]
+    paths: ['engine/src/**', 'engine/Makefile', '.github/workflows/windows-build.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile (MinGW g++, static, AVX2-era CPUs)
+        shell: bash
+        run: |
+          cd engine
+          g++ --version
+          g++ -std=c++17 -O3 -DNDEBUG -fno-exceptions -fno-rtti -march=x86-64-v3 -static -pthread \
+              src/bitboard.cpp src/position.cpp src/movegen.cpp src/eval.cpp src/tt.cpp src/search.cpp src/uci.cpp \
+              src/main_native.cpp -o tessera.exe
+          ./tessera.exe perft 5
+          ./tessera.exe bench 10
+      - name: Publish as release file
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view windows-build >/dev/null 2>&1 || gh release create windows-build --title "Windows build" --notes "tessera.exe built automatically from main (x86-64-v3: needs a CPU with AVX2, 2015 or newer)."
+          gh release upload windows-build engine/tessera.exe --clobber
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tessera-windows
+          path: engine/tessera.exe
