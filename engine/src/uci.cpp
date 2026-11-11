@@ -186,6 +186,62 @@ static void cmd_bench(Tokens& t) {
     Pos.set(StartFen);
 }
 
+// Self-play data for evaluation tuning: prints "fen;result" for quiet positions,
+// where result is the final game result from White's point of view (1, 0.5, 0).
+static void cmd_datagen(Tokens& t) {
+    int games = t.next() ? (int)to_int(t.tok) : 100;
+    u64 nodes = t.next() ? (u64)to_int(t.tok) : 5000;
+    u64 seed = (t.next() ? (u64)to_int(t.tok) : 1) * 0x9E3779B97F4A7C15ULL + 0x1234567;
+    auto rnd = [&seed]() { seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17; return seed; };
+    Limits lim;
+    lim.depth = 0; lim.nodes = nodes; lim.movetime = 0; lim.movestogo = 0; lim.infinite = false;
+    lim.time[0] = lim.time[1] = lim.inc[0] = lim.inc[1] = 0;
+    const bool variety = OpeningVariety;
+    OpeningVariety = false;
+    static char fens[400][96];
+
+    for (int g = 0; g < games; g++) {
+        Pos.set(StartFen);
+        bool ok = true;
+        int openingPlies = 8 + (int)(rnd() & 1);
+        for (int i = 0; i < openingPlies && ok; i++) {
+            Move list[MAX_MOVES], legal[MAX_MOVES];
+            int n = generate(Pos, list, GEN_ALL), nl = 0;
+            for (int k = 0; k < n; k++) if (Pos.legal(list[k])) legal[nl++] = list[k];
+            if (!nl) { ok = false; break; }
+            Pos.make(legal[(rnd() >> 20) % (u64)nl]);
+        }
+        if (!ok || !Pos.has_legal_move() || iabs(evaluate(Pos)) > 400) { g--; continue; }
+
+        int nFens = 0, winStreak = 0, drawStreak = 0, result2 = -1;   // result2 = 2 * white score
+        for (int ply = 0; ply < 500; ply++) {
+            if (!Pos.has_legal_move()) { result2 = Pos.in_check() ? (Pos.stm == WHITE ? 0 : 2) : 1; break; }
+            if (Pos.is_draw(0) || (!Pos.pieces(PAWN) && Pos.st->npm[0] + Pos.st->npm[1] <= 365)) { result2 = 1; break; }
+            SearchStop = false;
+            SearchResult r = search_go(Pos, lim, false);
+            if (r.best == MOVE_NONE) { result2 = 1; break; }
+            int white = Pos.stm == WHITE ? r.score : -r.score;
+            if (iabs(r.score) >= 1500) {
+                if (++winStreak >= 5) { result2 = white > 0 ? 2 : 0; break; }
+            } else winStreak = 0;
+            drawStreak = (ply > 80 && iabs(r.score) <= 5) ? drawStreak + 1 : 0;
+            if (drawStreak >= 12) { result2 = 1; break; }
+            if (!Pos.in_check() && !is_noisy(r.best) && iabs(r.score) < 1500 && nFens < 400) Pos.fen(fens[nFens++]);
+            Pos.make(r.best);
+            Pos.compact_history();
+        }
+        if (result2 < 0) result2 = 1;
+        for (int i = 0; i < nFens; i++) {
+            StrBuf b;
+            b.add(fens[i]);
+            b.add(result2 == 2 ? ";1" : result2 == 1 ? ";0.5" : ";0");
+            plat_out(b.b);
+        }
+    }
+    OpeningVariety = variety;
+    Pos.set(StartFen);
+}
+
 // Cross-checks pseudo_legal()/gives_check() against the move generator on a random walk.
 static void cmd_selftest() {
     u64 seed = 88172645463325252ULL, errors = 0, checked = 0;
@@ -258,6 +314,7 @@ void uci_command(const char* line) {
     else if (str_eq(t.tok, "perft")) cmd_perft(t);
     else if (str_eq(t.tok, "bench")) cmd_bench(t);
     else if (str_eq(t.tok, "selftest")) cmd_selftest();
+    else if (str_eq(t.tok, "datagen")) cmd_datagen(t);
     else if (str_eq(t.tok, "eval")) {
         StrBuf b;
         b.add("eval "); b.add_int(evaluate(Pos)); b.add(" cp (side to move)");

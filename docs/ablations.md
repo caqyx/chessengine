@@ -50,6 +50,32 @@ a few thousand games each at a longer time control.
 | Level 7 vs Level 4 | 30-0-0 |
 | Level 4 vs Level 1 | 24-4-2 |
 
+## Evaluation tuning (Texel method)
+
+The hand-set weights were fitted to 1,022,547 quiet positions from about 13,000
+self-play games (5,000 nodes per move, random 8-ply openings), using
+`tessera datagen` and `tools/tuner.cpp`. Tuned: one value per piece type on top
+of the piece-square tables, mobility tables, pawn-structure, passed-pawn rank,
+outpost, open-file, bishop-pair and threat weights. Not tuned: king safety,
+passed-pawn race terms, endgame knowledge.
+
+| Match (tuned vs hand-set weights) | Games | W-D-L | Elo for tuned |
+|---|---|---|---|
+| 20,000 nodes per move, first pass (400 epochs) | 300 | 132-129-39 | +111 [+82, +142] |
+| 100,000 nodes per move, final weights | 200 | 84-78-38 | +81 [+44, +120] |
+| 60 ms per move, final weights | 120 | 39-54-27 | +35 [-11, +82] |
+
+Two things learned on the way:
+
+- Validation has to be on whole games the tuner never saw. With positions of the
+  same game on both sides of the split, the error looked great while the weights
+  were memorising game results.
+- Tuning all 384 piece-square entries separately lost 49 Elo [-79, -19] against
+  tuning one value per piece type: 13,000 games are too few for that many
+  free parameters.
+
+The ablation tables above were measured with the hand-set weights.
+
 ## What these numbers do not say
 
 They compare Tessera with itself. They say nothing about absolute strength;

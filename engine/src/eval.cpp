@@ -8,24 +8,18 @@
 // Middlegame and endgame scores are blended by game phase, then the endgame
 // part is scaled down for drawish material.
 #include "eval.h"
+#include "eval_params.h"
+#include "eval_trace.h"
+
+#ifdef TUNE
+EvalTrace Trace;
+#endif
 
 enum { ALL = PT_ALL };
 
 // Debug switch for A/B testing evaluation terms (bit set = term enabled).
 int EvalMask = 31;
 
-static int MobilityN[9], MobilityB[14], MobilityR[15], MobilityQ[28];
-
-static const int BishopPair = S(25, 45);
-static const int Isolated = S(-8, -12);
-static const int Doubled = S(-6, -18);
-static const int Connected[8] = {0, S(2, 1), S(5, 3), S(8, 5), S(14, 9), S(28, 20), S(50, 35), 0};
-static const int PassedRank[8] = {0, S(0, 5), S(0, 8), S(5, 20), S(15, 40), S(30, 60), S(40, 60), 0};
-static const int RookOpen = S(28, 10), RookSemiOpen = S(12, 6);
-static const int KnightOutpost = S(25, 12), BishopOutpost = S(12, 6);
-static const int BishopPawns = S(-2, -4);
-static const int ThreatByPawn = S(45, 30), ThreatMinorOnMajor = S(35, 25), ThreatRookOnQueen = S(30, 15);
-static const int Hanging = S(28, 18);
 static const int Tempo = 16;
 
 static const int ShelterBonus[8] = {-28, 30, 18, 4, -4, -10, -14, 0};   // by rank of our pawn, 0 = no pawn
@@ -52,15 +46,6 @@ struct EvalInfo {
 };
 
 void eval_init() {
-    static const i8 nMG[9] = {-35, -20, -8, -2, 4, 9, 13, 17, 21}, nEG[9] = {-40, -25, -12, -4, 4, 10, 14, 16, 18};
-    static const i8 bMG[14] = {-30, -15, -5, 2, 8, 13, 17, 20, 23, 25, 27, 29, 31, 33};
-    static const i8 bEG[14] = {-40, -22, -10, -2, 5, 11, 16, 20, 23, 26, 28, 29, 30, 31};
-    static const i8 rMG[15] = {-30, -18, -10, -5, -1, 2, 5, 8, 11, 14, 16, 18, 20, 22, 24};
-    static const i8 rEG[15] = {-50, -28, -12, -2, 6, 13, 19, 24, 29, 33, 37, 40, 43, 45, 47};
-    for (int i = 0; i < 9; i++) MobilityN[i] = S(nMG[i], nEG[i]);
-    for (int i = 0; i < 14; i++) MobilityB[i] = S(bMG[i], bEG[i]);
-    for (int i = 0; i < 15; i++) MobilityR[i] = S(rMG[i], rEG[i]);
-    for (int i = 0; i < 28; i++) MobilityQ[i] = S(imin(-15 + i * 3 / 2, 25), imin(-40 + i * 3, 41));
     eval_clear();
 }
 
@@ -84,9 +69,9 @@ static int eval_pawns_side(const Position& pos, int us, Bitboard& passedOut) {
         bool doubled = ours & ForwardFile[us][sq];
         bool supported = PawnAttacks[them][sq] & ours;
         bool phalanx = neighbours & RankBB[rank_of(sq)];
-        if (!neighbours) score += Isolated;
-        if (doubled) score += Doubled;
-        if (supported || phalanx) score += Connected[r];
+        if (!neighbours) { score += Isolated; TRACE(F_ISOLATED, us, 1); }
+        if (doubled) { score += Doubled; TRACE(F_DOUBLED, us, 1); }
+        if (supported || phalanx) { score += Connected[r]; TRACE(F_CONNECTED + r, us, 1); }
         if (!(PassedMask[us][sq] & theirs) && !doubled) passed |= bit(sq);
     }
     passedOut = passed;
@@ -95,7 +80,9 @@ static int eval_pawns_side(const Position& pos, int us, Bitboard& passedOut) {
 
 static const PawnEntry* probe_pawns(const Position& pos) {
     PawnEntry* e = &PawnTable[pos.st->pawnKey & 16383];
+#ifndef TUNE
     if (e->key == pos.st->pawnKey) return e;
+#endif
     e->key = pos.st->pawnKey;
     e->score = eval_pawns_side(pos, WHITE, e->passed[WHITE]) - eval_pawns_side(pos, BLACK, e->passed[BLACK]);
     return e;
@@ -165,26 +152,39 @@ static int eval_pieces(const Position& pos, EvalInfo& ei, int us) {
             int mob = popcount(att & ei.mobilityArea[us]);
             if (pt == KNIGHT) {
                 score += MobilityN[mob];
+                TRACE(F_MOB_N + mob, us, 1);
                 if ((bit(sq) & outpostRanks & ei.attackedBy[us][PAWN])
-                    && !(PassedMask[us][sq] & AdjacentFiles[file_of(sq)] & theirPawns))
+                    && !(PassedMask[us][sq] & AdjacentFiles[file_of(sq)] & theirPawns)) {
                     score += KnightOutpost;
+                    TRACE(F_KNIGHT_OUTPOST, us, 1);
+                }
             } else if (pt == BISHOP) {
                 score += MobilityB[mob];
+                TRACE(F_MOB_B + mob, us, 1);
                 if ((bit(sq) & outpostRanks & ei.attackedBy[us][PAWN])
-                    && !(PassedMask[us][sq] & AdjacentFiles[file_of(sq)] & theirPawns))
+                    && !(PassedMask[us][sq] & AdjacentFiles[file_of(sq)] & theirPawns)) {
                     score += BishopOutpost;
+                    TRACE(F_BISHOP_OUTPOST, us, 1);
+                }
                 Bitboard sameColor = (DARK_SQUARES & bit(sq)) ? DARK_SQUARES : ~DARK_SQUARES;
                 score += BishopPawns * popcount(ourPawns & sameColor);
+                TRACE(F_BISHOP_PAWNS, us, popcount(ourPawns & sameColor));
             } else if (pt == ROOK) {
                 score += MobilityR[mob];
+                TRACE(F_MOB_R + mob, us, 1);
                 Bitboard file = FileBB[file_of(sq)];
-                if (!(file & ourPawns)) score += (file & theirPawns) ? RookSemiOpen : RookOpen;
+                if (!(file & ourPawns)) {
+                    const bool semi = file & theirPawns;
+                    score += semi ? RookSemiOpen : RookOpen;
+                    TRACE(semi ? F_ROOK_SEMI : F_ROOK_OPEN, us, 1);
+                }
             } else {
                 score += MobilityQ[mob];
+                TRACE(F_MOB_Q + mob, us, 1);
             }
         }
     }
-    if (more_than_one(pos.pieces(us, BISHOP))) score += BishopPair;
+    if (more_than_one(pos.pieces(us, BISHOP))) { score += BishopPair; TRACE(F_BISHOP_PAIR, us, 1); }
     return score;
 }
 
@@ -250,12 +250,17 @@ static int eval_threats(const Position& pos, const EvalInfo& ei, int us) {
     const int them = !us;
     const Bitboard theirPieces = pos.byColor[them] & ~pos.pieces(them, KING);
     const Bitboard nonPawns = theirPieces & ~pos.pieces(them, PAWN);
-    int score = 0;
-    score += ThreatByPawn * popcount(nonPawns & ei.attackedBy[us][PAWN]);
-    score += ThreatMinorOnMajor * popcount((pos.pieces(them, ROOK) | pos.pieces(them, QUEEN))
-                                           & (ei.attackedBy[us][KNIGHT] | ei.attackedBy[us][BISHOP]));
-    score += ThreatRookOnQueen * popcount(pos.pieces(them, QUEEN) & ei.attackedBy[us][ROOK]);
-    score += Hanging * popcount(theirPieces & ei.attackedBy[us][ALL] & ~ei.attackedBy[them][ALL]);
+    const int byPawn = popcount(nonPawns & ei.attackedBy[us][PAWN]);
+    const int minorOnMajor = popcount((pos.pieces(them, ROOK) | pos.pieces(them, QUEEN))
+                                      & (ei.attackedBy[us][KNIGHT] | ei.attackedBy[us][BISHOP]));
+    const int rookOnQueen = popcount(pos.pieces(them, QUEEN) & ei.attackedBy[us][ROOK]);
+    const int hanging = popcount(theirPieces & ei.attackedBy[us][ALL] & ~ei.attackedBy[them][ALL]);
+    TRACE(F_THREAT_PAWN, us, byPawn);
+    TRACE(F_THREAT_MINOR, us, minorOnMajor);
+    TRACE(F_THREAT_ROOK, us, rookOnQueen);
+    TRACE(F_HANGING, us, hanging);
+    int score = ThreatByPawn * byPawn + ThreatMinorOnMajor * minorOnMajor
+              + ThreatRookOnQueen * rookOnQueen + Hanging * hanging;
     return score;
 }
 
@@ -268,6 +273,7 @@ static int eval_passed(const Position& pos, const EvalInfo& ei, int us, Bitboard
         int sq = pop_lsb(passed);
         int r = relative_rank(us, sq);
         int bonus = PassedRank[r];
+        TRACE(F_PASSED_RANK + r, us, 1);
         if (r >= 3) {
             int w = 5 * r - 13;
             int block = sq + up;
@@ -330,6 +336,13 @@ int evaluate(const Position& pos) {
     // Dead-draw material: bare kings, or a single minor piece.
     if (!pawns && st->npm[WHITE] + st->npm[BLACK] <= 365) return 0;
 
+#ifdef TUNE
+    __builtin_memset(&Trace, 0, sizeof(Trace));
+    for (Bitboard b = pos.all(); b;) {
+        int sq = pop_lsb(b), pc = pos.board[sq], c = piece_color(pc);
+        TRACE(F_PSQ + piece_type(pc) * 64 + (c == WHITE ? sq ^ 56 : sq), c, 1);
+    }
+#endif
     EvalInfo ei;
     const PawnEntry* pe = probe_pawns(pos);
     int score = st->psq + pe->score;
@@ -353,6 +366,9 @@ int evaluate(const Position& pos) {
 
     int phase = imin(st->phase, 24);
     int sf = scale_factor(pos, eg);
+#ifdef TUNE
+    Trace.mg = mg; Trace.eg = eg; Trace.phase = phase; Trace.scale = sf; Trace.halfmove = st->halfmove;
+#endif
     int v = (mg * phase + eg * (24 - phase) * sf / 64) / 24;
     v = pos.stm == WHITE ? v : -v;
     v += Tempo;
