@@ -33,7 +33,7 @@ EXE = ".exe" if os.name == "nt" else ""
 def parse_args():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--hidden", type=int, default=128, help="size of the network's hidden layer (1..256)")
-    ap.add_argument("--epochs", type=int, default=16, help="passes over the data")
+    ap.add_argument("--epochs", type=int, default=24, help="passes over the data")
     ap.add_argument("--threads", type=int, default=os.cpu_count() or 2)
     ap.add_argument("--out", default=os.path.join(ROOT, "nets"), help="where the network and checkpoint go")
     ap.add_argument("--fresh", action="store_true", help="forget earlier training progress and start over")

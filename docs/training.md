@@ -129,6 +129,8 @@ What to expect, from the tests done while building this (300 games each at
 | 8 million | half game result, half search score | -147 Elo |
 | 7 million | search score only | -56 Elo |
 | 7 million | 80% search score, 20% game result (the default now) | -10 Elo [-42, +21] |
+| 7 million | same, twice as many passes | +3 Elo [-28, +35] |
+| 7 million | same as two rows up, 200 games at 100,000 nodes | 0 Elo [-36, +36] |
 
 Two lessons: more data helps, and what the network is asked to predict matters
 even more. With the default settings and only 7 million positions the network
