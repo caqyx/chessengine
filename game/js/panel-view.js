@@ -89,6 +89,7 @@ export function createPanelView() {
   function renderStatus(model) {
     setText(statusLine, model.line);
     status.classList.toggle('is-over', model.over);
+    status.classList.toggle('is-reviewing', Boolean(model.review));
     statusReview.hidden = !model.review;
     if (model.review) setText(statusSub, model.review);
   }

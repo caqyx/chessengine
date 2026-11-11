@@ -23,8 +23,9 @@ game/js/engine-client.js  --postMessage(string)-->  engine/web/engine-worker.js 
 | `uci` | `id name ...`, `id author ...`, `option ...` lines, then `uciok` |
 | `isready` | `readyok` |
 | `ucinewgame` | nothing (clears hash and history) |
-| `setoption name Hash value <MB>` | nothing. 1..256, web default 32 |
+| `setoption name Hash value <MB>` | nothing. 1..4096, web default 32 (the game uses 32) |
 | `setoption name Level value <1..10>` | nothing. 10 = full strength (default). 1 = beginner |
+| `setoption name Opening Variety value true\|false` | nothing. Web default true: a little evaluation noise in the first 4 moves at Level 10 so games do not all open the same way |
 | `position startpos [moves e2e4 e7e5 ...]` | nothing |
 | `position fen <fen> [moves ...]` | nothing |
 | `go movetime <ms>` | `info ...` lines, then `bestmove ...` |
@@ -66,3 +67,21 @@ changes before it finishes.
 `Level` 1..9 weaken the engine (shallower search plus evaluation noise). The
 level only changes strength; the time the engine spends is still controlled by
 the `go` command, so the game can use short `movetime` values on low levels.
+
+## Other options
+
+`uci` also lists `Move Overhead` (ms subtracted from the time budget, default
+10), `Clear Hash`, and two debug switches used for self-play testing,
+`EvalMask` and `SearchMask` (see `docs/ablations.md`). The game does not set
+them.
+
+## What the game sends
+
+- worker start (first load and every respawn): `uci`, `setoption name Hash value 32`, `isready`
+- new game: `ucinewgame`
+- engine move, no clock: `setoption name Level value N`, `position ...`, `go movetime T` (T grows with the level, 2000 ms at level 10)
+- engine move, with clock: `go wtime .. btime .. winc .. binc ..`
+- analysis: Level 10, `go movetime 3000`; hint: `go movetime 1200`
+
+At low levels the engine answers in a few milliseconds, so the game holds the
+reply back until at least 300 ms have passed.

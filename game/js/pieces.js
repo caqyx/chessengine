@@ -1,7 +1,7 @@
 /**
  * pieces.js - the piece set, drawn for this game as inline SVG.
  *
- * Every piece lives in a 100 x 100 box and is built from the same three ideas: a flat plinth,
+ * Every piece is drawn on a 100 x 100 grid (the viewBox trims the empty margin) and is built from the same three ideas: a flat plinth,
  * a solid body and one unmistakable top (ball, ear, mitre, battlement, coronet, cross).
  * Colours come from CSS custom properties (see board.css):
  *   --piece-fill    body colour
@@ -66,5 +66,5 @@ export function pieceName(color, type) {
  * @returns {string}
  */
 export function pieceSvg(color, type) {
-  return `<svg class="piece-svg piece-${color}" viewBox="0 0 100 100" aria-hidden="true" focusable="false">${SHAPES[type]}</svg>`;
+  return `<svg class="piece-svg piece-${color}" viewBox="4 3 92 92" aria-hidden="true" focusable="false">${SHAPES[type]}</svg>`;
 }

@@ -48,12 +48,18 @@ const ANALYSIS_MS = 3000;
 const HINT_MS = 1200;
 const RESIGN_CONFIRM_MS = 3000;
 const LOW_TIME_MS = 10_000;
+/** The engine answers within a millisecond on low levels; its move is shown no sooner than this. */
+const MIN_THINK_MS = 300;
 
 const NOTICE_STUB = 'Engine unavailable, using random mover';
 const NOTICE_NO_ENGINE = 'Engine unavailable';
 
 function otherColor(color) {
   return color === 'w' ? 'b' : 'w';
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -121,12 +127,27 @@ export function createController({ views, engine, toast, applyTheme }) {
     return { clock: { wtime: remaining.w, btime: remaining.b, winc: incMs, binc: incMs } };
   }
 
+  /**
+   * How long the engine's move is held back so that the reply never lands in the same instant
+   * as the person's move. The wait is dropped when the engine itself is short of time.
+   */
+  function minimumThinkMs(timing) {
+    if (!timing.clock) return MIN_THINK_MS;
+    const own = game.chess.turn() === 'w' ? timing.clock.wtime : timing.clock.btime;
+    return own > LOW_TIME_MS ? MIN_THINK_MS : 0;
+  }
+
   function searchEngineMove(key) {
-    const request = { ...searchFrom(livePly(game)), level: game.level, ...moveTiming() };
-    engine.search(request).then((result) => {
-      if (!result || task.key !== key) return;
-      playEngineMove(result.bestmove);
-    });
+    const timing = moveTiming();
+    const request = { ...searchFrom(livePly(game)), level: game.level, ...timing };
+    const waited = delay(minimumThinkMs(timing));
+    engine
+      .search(request)
+      .then((result) => waited.then(() => result))
+      .then((result) => {
+        if (!result || task.key !== key) return;
+        playEngineMove(result.bestmove);
+      });
   }
 
   function playEngineMove(uci) {
@@ -260,10 +281,15 @@ export function createController({ views, engine, toast, applyTheme }) {
     return turn === game.humanColor ? `${check}Your move` : `${check}The engine is thinking`;
   }
 
+  /** "Viewing 12. Nf3" / "Viewing 12... Nc6" while an earlier position is on the board. */
   function reviewText() {
     if (isLive(game)) return null;
     const ply = viewedPly(game);
-    return ply === 0 ? 'Viewing the starting position.' : `Viewing move ${ply} of ${livePly(game)}.`;
+    if (ply === 0) return 'Viewing the starting position';
+    const first = firstMoveInfo(game);
+    const halfMoves = ply - 1 + (first.blackStarts ? 1 : 0);
+    const number = first.number + Math.floor(halfMoves / 2);
+    return `Viewing ${number}${halfMoves % 2 === 0 ? '.' : '...'} ${game.moves[ply - 1].san}`;
   }
 
   function targetsOf(square) {
@@ -379,7 +405,6 @@ export function createController({ views, engine, toast, applyTheme }) {
     const ply = viewedPly(game);
     const over = outcome(game);
     views.board.render(boardModel(chess, ply));
-    views.moves.render(moveListModel(ply));
     views.panel.render({
       players: playersModel(chess, over),
       status: { line: over ? outcomeText(over) : turnText(), over: Boolean(over), review: reviewText() },
@@ -387,6 +412,8 @@ export function createController({ views, engine, toast, applyTheme }) {
       analysis: analysisModel(),
       notice: engineNotice,
     });
+    // Last: the list scrolls its current move into view, and the panel above can change its height.
+    views.moves.render(moveListModel(ply));
   }
 
   /** Engine info lines can arrive in bursts; draw them at most once per frame. */

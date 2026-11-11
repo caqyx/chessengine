@@ -8,6 +8,10 @@
 #include "tt.h"
 #include "platform.h"
 
+#ifndef OPENING_VARIETY_DEFAULT
+#define OPENING_VARIETY_DEFAULT false
+#endif
+
 volatile bool SearchStop = false;
 int MoveOverhead = 10;
 int SearchMask = 255;   // 1 check ext, 2 singular, 4 probcut, 8 correction history, 16 razoring, 32 rfp, 64 nmp, 128 lmp/futility
@@ -39,7 +43,9 @@ static int SelDepth, RootDepth, NmpMinPly;
 static u64 StartTime, HardLimit;
 static u64 NodeLimit;
 static Move RootBest;
-static int Level = 10, NoiseAmp = 0, LevelDepth = 0;
+static int Level = 10, LevelNoise = 0, LevelDepth = 0;
+static int NoiseAmp = 0;          // noise actually used by the running search
+bool OpeningVariety = OPENING_VARIETY_DEFAULT;
 static u64 NoiseSeed = 0;
 
 static double ln_approx(double x) {
@@ -70,7 +76,7 @@ void search_set_level(int level) {
     static const int Noise[11] = {0, 260, 200, 150, 110, 80, 55, 35, 20, 8, 0};
     Level = iclamp(level, 1, 10);
     LevelDepth = Depths[Level];
-    NoiseAmp = Noise[Level];
+    LevelNoise = Noise[Level];
 }
 
 // ---- helpers --------------------------------------------------------------
@@ -606,6 +612,10 @@ SearchResult search_go(Position& pos, const Limits& lim, bool printInfo) {
     Nodes = 0; NmpMinPly = 0; RootDepth = 1;
     NodeLimit = lim.nodes;
     NoiseSeed = StartTime * 0x2545F4914F6CDD1DULL + pos.st->key;
+    // Full strength is deterministic, which means the same opening every game.
+    // A few centipawns of noise in the first moves gives variety at no real cost.
+    NoiseAmp = LevelNoise;
+    if (OpeningVariety && Level == 10 && pos.fullmove <= 4 && pos.st->phase >= 24) NoiseAmp = 14;
     tt_new_search();
     __builtin_memset(RootMoveNodes, 0, sizeof(RootMoveNodes));
     for (int i = 0; i < MAX_PLY + 10; i++) {

@@ -5,10 +5,19 @@
  * object with an `open` method; what happens with the user's choice is up to the callbacks.
  */
 
+/** True when a click landed on the backdrop: outside the dialog's own box. */
+function isBackdropClick(dialog, event) {
+  if (event.target !== dialog) return false;
+  const box = dialog.getBoundingClientRect();
+  const inside =
+    event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
+  return !inside;
+}
+
 /** Closes on the Cancel / Close buttons and on a click on the backdrop. */
 function wireDismissal(dialog) {
   dialog.addEventListener('click', (event) => {
-    if (event.target === dialog || event.target.closest('[data-close]')) dialog.close();
+    if (isBackdropClick(dialog, event) || event.target.closest('[data-close]')) dialog.close();
   });
 }
 

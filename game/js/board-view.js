@@ -276,7 +276,15 @@ export function createBoardView(root) {
     choices[0].focus({ preventScroll: true });
 
     return new Promise((resolve) => {
+      // The tap that dropped the pawn also ends in a click, and on touch screens that click
+      // lands on the picker that has just appeared under the finger. Only a press that began
+      // on the picker (or a keyboard activation, detail 0) may choose.
+      let pressed = false;
+      const onPress = () => {
+        pressed = true;
+      };
       const onClick = (event) => {
+        if (!pressed && event.detail !== 0) return;
         const choice = event.target.closest('.promotion-choice');
         closePromotion(choice ? choice.dataset.promotion : null);
       };
@@ -287,10 +295,12 @@ export function createBoardView(root) {
         closePromotion = null;
         promotionLayer.hidden = true;
         promotionLayer.replaceChildren();
+        promotionLayer.removeEventListener('pointerdown', onPress);
         promotionLayer.removeEventListener('click', onClick);
         document.removeEventListener('keydown', onKey);
         resolve(result);
       };
+      promotionLayer.addEventListener('pointerdown', onPress);
       promotionLayer.addEventListener('click', onClick);
       document.addEventListener('keydown', onKey);
     });

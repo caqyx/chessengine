@@ -19,7 +19,7 @@ wasm: web/engine.wasm
 
 web/engine.wasm: $(CORE) src/main_wasm.cpp src/*.h
 	$(WASM_CXX) --target=wasm32 $(CXXFLAGS) -ffreestanding -fno-builtin -nostdlib -mbulk-memory \
-	    -DDEFAULT_HASH_MB=32 -flto \
+	    -DDEFAULT_HASH_MB=32 -DOPENING_VARIETY_DEFAULT=true -flto \
 	    -Wl,--no-entry -Wl,--stack-first -Wl,-z,stack-size=4194304 -Wl,--lto-O3 \
 	    $(CORE) src/main_wasm.cpp -o $@
 

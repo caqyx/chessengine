@@ -70,7 +70,10 @@ What has been verified in this repository:
 
 - perft matches the published node counts on six positions; `selftest` cross-checks `pseudo_legal()`, `gives_check()` and the incremental hash on 13.8 M random probes with 0 errors;
 - native and wasm builds search exactly the same tree (`bench` node counts are identical);
-- self-play ablations at a fixed node budget (see `docs/ablations.md`).
+- self-play ablations at a fixed node budget (`docs/ablations.md`): every evaluation term gains 50-80 Elo, the full evaluation gains about +168 over material and piece-square tables alone, singular extensions gain about +67; three search features (ProbCut, check extension, correction history) are within noise;
+- the game was driven in headless Chrome against the real wasm engine at phone and desktop sizes (moves by tap and drag, promotion, clocks, analysis, PGN/FEN, reload restore). Not tested: Safari, Firefox, a physical phone.
+
+What has not been measured: strength against any other engine, including Stockfish. No Elo number is claimed here.
 
 ## Layout
 

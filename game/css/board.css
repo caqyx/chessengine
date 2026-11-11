@@ -1,0 +1,303 @@
+/*
+ * board.css - the board and everything drawn on it: squares, coordinates, highlights,
+ * pieces, the arrow overlay, the promotion picker and the eval bar.
+ *
+ * The board is a square whose size is decided by layout.css; everything inside is laid out
+ * in eighths of it, so nothing here depends on a pixel size.
+ */
+
+.board-wrap {
+  position: relative;
+}
+
+.board {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  cursor: pointer;
+}
+
+.board.is-locked {
+  cursor: default;
+}
+
+/* -- squares ---------------------------------------------------------------------- */
+
+.squares {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template: repeat(8, 1fr) / repeat(8, 1fr);
+}
+
+.square {
+  position: relative;
+}
+
+.square.light {
+  background: var(--sq-light);
+  color: var(--coord-on-light);
+}
+
+.square.dark {
+  background: var(--sq-dark);
+  color: var(--coord-on-dark);
+}
+
+.coord {
+  position: absolute;
+  z-index: 1;
+  font-size: clamp(9px, 2.4vmin, 12px);
+  font-weight: 600;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.coord-rank {
+  top: 3px;
+  left: 3px;
+}
+
+.coord-file {
+  right: 3px;
+  bottom: 3px;
+}
+
+/* Tints: last move and selection share the accent; a king in check gets the danger colour. */
+.square.last::before,
+.square.selected::before,
+.square.check::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  opacity: 0.4;
+}
+
+.square.selected::before {
+  opacity: 0.66;
+}
+
+.square.check::before {
+  background: var(--danger);
+  opacity: 0.62;
+}
+
+/* Legal destinations: a dot on an empty square, a ring around a piece that can be taken. */
+.square.target::after,
+.square.target-capture::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+}
+
+.square.target::after {
+  inset: 35%;
+  background: var(--mark);
+}
+
+.square.target-capture::after {
+  inset: 5%;
+  border: max(3px, 0.6vmin) solid var(--mark);
+}
+
+/* The square a dragged piece would land on. */
+.square.hover {
+  box-shadow: inset 0 0 0 max(3px, 0.5vmin) var(--accent);
+}
+
+/* -- pieces ----------------------------------------------------------------------- */
+
+.pieces {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.piece {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 12.5%;
+  height: 12.5%;
+  transition: transform 170ms cubic-bezier(0.3, 0, 0.2, 1), opacity 170ms ease;
+  will-change: transform;
+}
+
+.piece.dragging {
+  z-index: 3;
+  scale: 1.18;
+  transition: none;
+}
+
+.piece.leaving {
+  opacity: 0;
+}
+
+.no-anim,
+.no-anim .piece {
+  transition: none !important;
+}
+
+.piece-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.piece-svg .s {
+  stroke-width: 3.2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.piece-svg .d {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.piece-w .s {
+  fill: var(--piece-w-fill);
+  stroke: var(--piece-w-line);
+}
+
+.piece-w .d {
+  stroke: var(--piece-w-line);
+}
+
+.piece-w .e {
+  fill: var(--piece-w-line);
+}
+
+.piece-b .s {
+  fill: var(--piece-b-fill);
+  stroke: var(--piece-b-line);
+}
+
+.piece-b .d {
+  stroke: var(--piece-b-detail);
+}
+
+.piece-b .e {
+  fill: var(--piece-b-detail);
+}
+
+/* -- arrows ------------------------------------------------------------------------ */
+
+.arrows {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.arrow {
+  opacity: 0.88;
+}
+
+.arrow line {
+  stroke: var(--accent);
+  stroke-width: 0.17;
+  stroke-linecap: round;
+}
+
+.arrow polygon {
+  fill: var(--accent);
+}
+
+/* -- promotion picker ----------------------------------------------------------------- */
+
+.promotion {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: var(--scrim);
+}
+
+.promotion-choice {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 12.5%;
+  height: 12.5%;
+  padding: 0;
+  background: var(--paper-raised);
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+.promotion-choice:focus-visible {
+  outline-offset: -3px;
+}
+
+.promotion-choice:active {
+  background: var(--sq-light);
+}
+
+@media (hover: hover) {
+  .promotion-choice:hover {
+    background: var(--sq-light);
+  }
+}
+
+/* -- eval bar: white's share grows from White's side of the board --------------------- */
+
+.evalbar {
+  position: relative;
+  overflow: hidden;
+  background: var(--eval-black);
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+.evalbar-white {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--share, 50%);
+  background: var(--eval-white);
+  transition: height 320ms ease;
+}
+
+.evalbar.is-flipped .evalbar-white {
+  top: 0;
+  bottom: auto;
+}
+
+/* The score sits at the end of the bar that belongs to the side that is ahead. */
+.evalbar-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 4px;
+  color: var(--eval-black);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.evalbar:not(.white-ahead) .evalbar-label {
+  top: 4px;
+  bottom: auto;
+  color: var(--eval-white);
+}
+
+.evalbar.is-flipped .evalbar-label {
+  top: 4px;
+  bottom: auto;
+}
+
+.evalbar.is-flipped:not(.white-ahead) .evalbar-label {
+  top: auto;
+  bottom: 4px;
+}

@@ -1,0 +1,635 @@
+/*
+ * layout.css - where things sit.
+ *
+ * Phone first: one column, the board edge to edge, the controls below it within thumb reach.
+ * From 900 px: two columns, board on the left, side panel on the right, sized so that the
+ * whole game fits the viewport without scrolling.
+ */
+
+.app {
+  --pad: 16px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+}
+
+/* -- masthead ------------------------------------------------------------------------ */
+
+.masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px var(--pad) 2px;
+}
+
+.title {
+  font: 500 27px/1.1 var(--font-serif);
+  letter-spacing: -0.015em;
+}
+
+/* -- player bars --------------------------------------------------------------------- */
+
+.player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 var(--pad);
+  min-width: 0;
+}
+
+.player-side {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--ink);
+}
+
+.player-side[data-color='w'] {
+  background: var(--piece-w-fill);
+}
+
+.player-side[data-color='b'] {
+  background: var(--piece-b-fill);
+  box-shadow: inset 0 0 0 1.5px var(--ink-muted);
+}
+
+.player-name {
+  flex: 0 1 auto;
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-size: 14px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player.is-turn .player-name {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.player-captured {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.captured-piece {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-left: 1px;
+}
+
+.captured-piece.same {
+  margin-left: -9px;
+}
+
+/* Off the board the dark pieces sit on the page colour, so they get a visible edge. */
+.captured-piece .piece-b .s {
+  stroke: var(--captured-edge);
+}
+
+.player-lead {
+  flex: none;
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.player-clock {
+  flex: none;
+  min-width: 76px;
+  margin-left: auto;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  color: var(--ink-muted);
+  font-size: 20px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: right;
+}
+
+.player-clock.is-running {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.player-clock.is-low {
+  color: var(--danger);
+}
+
+.player-clock.is-running.is-low {
+  background: var(--danger);
+  color: var(--paper);
+}
+
+/* -- board and eval bar (phone: the bar takes a sliver on the left) -------------------- */
+
+.board-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.board-wrap.has-evalbar {
+  grid-template-columns: 14px minmax(0, 1fr);
+}
+
+.board-wrap .evalbar-label {
+  display: none;
+}
+
+/* -- status: the headline; while reviewing, the review line takes its place on phones ---- */
+
+.status {
+  /* One row of fixed height, so the buttons below never move under a thumb. */
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 2px var(--pad);
+}
+
+.status-line {
+  font: 500 19px/1.2 var(--font-serif);
+  letter-spacing: -0.005em;
+}
+
+.status.is-over .status-line {
+  padding: 7px 12px;
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.status.is-reviewing .status-line {
+  display: none;
+}
+
+.status-review {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ink-muted);
+  font-size: 14px;
+}
+
+.status-review .btn-link {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+/* -- move list (phone: one strip that scrolls sideways) --------------------------------- */
+
+.moves {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  margin: 0 var(--pad);
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  white-space: nowrap;
+}
+
+.moves::-webkit-scrollbar {
+  display: none;
+}
+
+.move-row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  margin-right: 8px;
+}
+
+.move-number {
+  color: var(--ink-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.move {
+  min-width: 44px;
+  height: 44px;
+  padding: 0 8px;
+  /* the visible pill is smaller than the 44 px touch target */
+  border: solid transparent;
+  border-width: 8px 0;
+  border-radius: 12px;
+  background-clip: padding-box;
+  font-size: 15px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.move-gap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-muted);
+}
+
+.move[aria-current] {
+  background-color: var(--ink);
+  color: var(--paper);
+}
+
+.moves-empty {
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
+/* -- navigation and actions ------------------------------------------------------------- */
+
+.nav {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  padding: 2px var(--pad) 4px;
+}
+
+.nav .btn {
+  width: 100%;
+  height: 48px;
+}
+
+/* One strip with hairline separators instead of five boxed buttons. */
+.actions {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin: 0 var(--pad);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.actions .btn {
+  min-width: 0;
+  height: 48px;
+  padding: 0 2px;
+  border: 0;
+  border-left: 1px solid var(--rule);
+  border-radius: 0;
+  font-size: 13.5px;
+}
+
+.actions .btn:first-child {
+  border-left: 0;
+}
+
+.actions .btn:focus-visible {
+  outline-offset: -3px;
+}
+
+.actions .btn[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.actions .btn[aria-disabled='true'] {
+  color: var(--ink-muted);
+}
+
+.actions .btn.is-armed {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.actions .btn.is-busy {
+  color: var(--ink-muted);
+}
+
+/* -- analysis line ----------------------------------------------------------------------- */
+
+.analysis {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 12px;
+  row-gap: 2px;
+  padding: 8px var(--pad) 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.analysis-score {
+  min-width: 44px;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.analysis-depth {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.analysis-line {
+  grid-column: 1 / -1;
+  min-height: 20px;
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app > .notice {
+  padding: 8px var(--pad) 0;
+}
+
+/* -- large phones, tablets and tall windows: keep board + controls on one screen ----------- */
+
+@media (min-width: 520px) {
+  .app {
+    max-width: max(420px, min(100%, calc(100dvh - 404px)));
+  }
+}
+
+/* -- two columns: desktops (900 px and up, unless the window is much taller than wide), and
+      smaller screens that are clearly wider than tall, such as a phone held sideways.
+      The same three conditions are repeated on the blocks further down. --------------------- */
+
+@media (min-width: 900px) and (min-aspect-ratio: 4/5),
+  (min-width: 720px) and (min-aspect-ratio: 1/1),
+  (min-width: 560px) and (min-aspect-ratio: 3/2) {
+  body {
+    display: grid;
+    min-height: 100dvh;
+    place-items: center;
+  }
+
+  .app {
+    --pad: 0px;
+    --bar: 44px;
+    --gutter: 28px;
+    --edge: clamp(8px, 2.6vh, 20px);
+    --gap: clamp(16px, 3.2vw, 44px);
+    --panel: clamp(312px, 30vw, 380px);
+    --board: max(
+      180px,
+      min(100dvh - 2 * var(--bar) - 2 * var(--edge), 100vw - var(--panel) - var(--gap) - 2 * var(--gutter))
+    );
+    display: grid;
+    grid-template-columns: var(--board) var(--panel);
+    grid-template-rows: var(--bar) auto minmax(0, 1fr) auto auto auto var(--bar);
+    grid-template-areas:
+      'top     head'
+      'board   status'
+      'board   moves'
+      'board   nav'
+      'board   actions'
+      'board   analysis'
+      'bottom  notice';
+    column-gap: var(--gap);
+    width: max-content;
+    max-width: none;
+    height: calc(var(--board) + 2 * var(--bar));
+    min-height: 0;
+    margin: var(--edge) var(--gutter);
+    padding: 0;
+  }
+
+  .masthead {
+    grid-area: head;
+    align-items: flex-start;
+    padding: 0;
+  }
+
+  .title {
+    font-size: 34px;
+    line-height: 1;
+  }
+
+  .masthead .btn {
+    min-height: 36px;
+  }
+
+  .player {
+    height: var(--bar);
+  }
+
+  .player-top {
+    grid-area: top;
+  }
+
+  .player-bottom {
+    grid-area: bottom;
+  }
+
+  .board-wrap,
+  .board-wrap.has-evalbar {
+    grid-area: board;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The bar lives in the page margin, so switching analysis on does not move the board. */
+  .evalbar {
+    position: absolute;
+    top: 0;
+    right: calc(100% + 6px);
+    bottom: 0;
+    width: 12px;
+  }
+
+  .status {
+    grid-area: status;
+    display: block;
+    min-height: 0;
+    padding: 20px 0 12px;
+  }
+
+  .status.is-reviewing .status-line {
+    display: block;
+  }
+
+  .status.is-over .status-line {
+    display: inline-block;
+  }
+
+  .status-review {
+    justify-content: flex-start;
+    margin-bottom: -8px;
+    font-size: 13px;
+  }
+
+  .status-review .btn-link {
+    min-height: 36px;
+    font-size: 13px;
+  }
+
+  .status-line {
+    font-size: 24px;
+  }
+
+  .status.is-over .status-line {
+    padding: 8px 14px;
+  }
+
+  .moves {
+    grid-area: moves;
+    display: block;
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    padding: 4px 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--rule) transparent;
+    white-space: normal;
+  }
+
+  .moves::-webkit-scrollbar {
+    display: block;
+    width: 8px;
+  }
+
+  .moves::-webkit-scrollbar-thumb {
+    border-radius: 4px;
+    background: var(--rule);
+  }
+
+  .move-row {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 132px) minmax(0, 1fr);
+    align-items: center;
+    margin: 0;
+  }
+
+  .move {
+    justify-self: start;
+    min-width: 64px;
+    height: 34px;
+    padding: 0 10px;
+    border-width: 3px 0;
+    border-radius: 9px;
+    text-align: left;
+  }
+
+  .moves-empty {
+    padding: 8px 0;
+  }
+
+  .nav {
+    grid-area: nav;
+    padding: 8px 0;
+  }
+
+  .nav .btn {
+    height: 44px;
+  }
+
+  .actions {
+    grid-area: actions;
+    margin: 0;
+  }
+
+  .actions .btn {
+    height: 44px;
+    font-size: 14px;
+  }
+
+  .analysis {
+    grid-area: analysis;
+    padding: 14px 0 0;
+  }
+
+  .analysis-line {
+    display: -webkit-box;
+    min-height: 40px;
+    line-height: 20px;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+
+  .app > .notice {
+    grid-area: notice;
+    align-self: center;
+    padding: 0;
+  }
+}
+
+/* Wide screens have room for a broader bar that carries the score. */
+@media (min-width: 900px) and (min-aspect-ratio: 4/5) {
+  .app {
+    --gutter: 44px;
+  }
+
+  .evalbar {
+    right: calc(100% + 10px);
+    width: 26px;
+  }
+
+  .board-wrap .evalbar-label {
+    display: block;
+  }
+}
+
+/* Two columns on a low screen (a phone held sideways): spend less height on type and gaps. */
+@media (min-width: 560px) and (min-aspect-ratio: 3/2) and (max-height: 520px) {
+  .title {
+    font-size: 26px;
+    line-height: 36px;
+  }
+
+  .status {
+    padding: 6px 0;
+  }
+
+  .status-line {
+    font-size: 20px;
+  }
+
+  .status.is-over .status-line {
+    padding: 5px 10px;
+  }
+
+  .nav {
+    padding: 2px 0;
+  }
+
+  .analysis {
+    padding-top: 6px;
+  }
+
+  .analysis-line {
+    display: block;
+    min-height: 20px;
+    white-space: nowrap;
+  }
+}
+
+@media (hover: hover) {
+  .move:hover:not([aria-current]) {
+    background-color: var(--wash);
+  }
+}
+
+/* Touch screens that are wide enough for two columns keep full-size targets. */
+@media (min-width: 900px) and (min-aspect-ratio: 4/5) and (pointer: coarse),
+  (min-width: 720px) and (min-aspect-ratio: 1/1) and (pointer: coarse),
+  (min-width: 560px) and (min-aspect-ratio: 3/2) and (pointer: coarse) {
+  .move {
+    height: 44px;
+    border-width: 6px 0;
+  }
+
+  .masthead .btn {
+    min-height: 44px;
+  }
+}

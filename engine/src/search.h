@@ -19,6 +19,7 @@ struct SearchResult {
 
 extern volatile bool SearchStop;
 extern int MoveOverhead;
+extern bool OpeningVariety;   // small eval noise in the first moves so games differ
 extern int SearchMask;   // debug switch for A/B testing search features
 
 void search_init();

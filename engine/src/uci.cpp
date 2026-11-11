@@ -102,6 +102,7 @@ static void cmd_setoption(Tokens& t) {
     if (str_ieq(name.b, "Hash")) tt_resize((int)to_int(value.b));
     else if (str_ieq(name.b, "Level")) search_set_level((int)to_int(value.b));
     else if (str_ieq(name.b, "Move Overhead")) MoveOverhead = iclamp((int)to_int(value.b), 0, 5000);
+    else if (str_ieq(name.b, "Opening Variety")) OpeningVariety = str_ieq(value.b, "true");
     else if (str_ieq(name.b, "EvalMask")) { EvalMask = (int)to_int(value.b); eval_clear(); tt_clear(); }
     else if (str_ieq(name.b, "SearchMask")) SearchMask = (int)to_int(value.b);
     else if (str_ieq(name.b, "Clear Hash")) { tt_clear(); search_clear(); eval_clear(); }
@@ -163,6 +164,8 @@ static void cmd_bench(Tokens& t) {
     lim.depth = depth; lim.nodes = 0; lim.movetime = 0; lim.movestogo = 0; lim.infinite = false;
     lim.time[0] = lim.time[1] = lim.inc[0] = lim.inc[1] = 0;
     tt_clear(); search_clear(); eval_clear();
+    const bool variety = OpeningVariety;
+    OpeningVariety = false;   // bench must be reproducible
     for (unsigned i = 0; i < sizeof(BenchFens) / sizeof(BenchFens[0]); i++) {
         Pos.set(BenchFens[i]);
         SearchStop = false;
@@ -178,6 +181,8 @@ static void cmd_bench(Tokens& t) {
     b.add("bench total nodes "); b.add_int((i64)total); b.add(" time "); b.add_int((i64)ms);
     b.add(" nps "); b.add_int((i64)(total * 1000 / (ms ? ms : 1)));
     plat_out(b.b);
+    OpeningVariety = variety;
+    tt_clear();
     Pos.set(StartFen);
 }
 
@@ -239,6 +244,8 @@ void uci_command(const char* line) {
         plat_out(b.b);
         plat_out("option name Level type spin default 10 min 1 max 10");
         plat_out("option name Move Overhead type spin default 10 min 0 max 5000");
+        plat_out(OpeningVariety ? "option name Opening Variety type check default true"
+                                : "option name Opening Variety type check default false");
         plat_out("option name Clear Hash type button");
         plat_out("option name EvalMask type spin default 31 min 0 max 31");
         plat_out("option name SearchMask type spin default 255 min 0 max 255");
