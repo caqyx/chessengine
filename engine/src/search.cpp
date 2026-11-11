@@ -162,7 +162,7 @@ static inline int quiet_history(const Position& pos, const Stack* ss, Move m) {
 }
 
 static inline int raw_eval(const Position& pos) {
-    int v = evaluate(pos) * EvalScale / 100;
+    int v = (NnueActive ? nnue_evaluate(pos) : evaluate(pos)) * EvalScale / 100;
     if (NoiseAmp) {   // weakened levels: deterministic per-position noise
         u64 h = (pos.st->key ^ NoiseSeed) * 0x9E3779B97F4A7C15ULL;
         v += (int)((h >> 40) % (u64)(2 * NoiseAmp + 1)) - NoiseAmp;

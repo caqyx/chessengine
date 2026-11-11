@@ -53,6 +53,8 @@ Use the native binary in any UCI GUI (Cute Chess, Arena, En Croissant, ...). Opt
 
 **Tuning.** The weights in `engine/src/eval_params.h` are not hand-picked: `tessera datagen` plays self-play games and writes out quiet positions with the search score and the game result, and `tools/tuner.cpp` fits the weights so that the evaluation predicts those results (Texel tuning: logistic regression by gradient descent, validated on games it never trained on). It covers piece-square tables, mobility, pawn structure, threats and the king-safety weights. Two rounds on about 50,000 games (stored in `data/`) each gained clearly at small search budgets and less at larger ones; the measurements are in `docs/ablations.md`.
 
+**Neural network (experimental).** The engine can replace the hand-written evaluation with a small network (768 inputs, one hidden layer kept up to date move by move, one output; `engine/src/nnue.cpp`) loaded with `setoption name EvalFile value <file>`. It is trained only on Tessera's own games by `tools/trainer.cpp`. No network ships yet: trained on the 7 million scored positions in `data/` it is about level with the hand-written evaluation (-10 Elo [-42, +21] over 300 games), so it needs more data to pull ahead (`docs/training.md`).
+
 **Levels.** Levels 1-9 cap the search depth and add deterministic per-position noise to the evaluation, so weaker levels make plausible human-like mistakes instead of random moves.
 
 ## Strength, honestly
@@ -97,6 +99,7 @@ docs/engine-protocol.md    contract between game and engine worker
 tools/match.py             engine-vs-engine match runner
 tools/tuner.cpp            fits the evaluation weights to self-play games
 tools/gen_data.py          generates self-play data on your own machine, stop and resume freely (docs/training.md)
+tools/train_net.py         trains the neural-network evaluation on that data (wraps tools/trainer.cpp)
 tools/fit_wdl.py           fits the win/draw/loss model shown in the game
 data/                      4 million self-play positions with scores and results
 ```

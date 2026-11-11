@@ -1,5 +1,6 @@
 #pragma once
 #include "bitboard.h"
+#include "nnue.h"
 
 // Everything that changes with a move and cannot be recomputed cheaply.
 // states[n] describes the position after n moves from setup, so unmake is
@@ -28,6 +29,8 @@ struct Position {
     int fullmove;
     State* st;
     State states[MAX_HIST];
+    // Network accumulators, one per entry of `states` (only maintained while a network is active).
+    Accumulator accStack[MAX_HIST];
 
     bool set(const char* fen);
     void fen(char* out) const;
@@ -55,6 +58,8 @@ struct Position {
     int moved_piece(Move m) const { return board[from_sq(m)]; }
     // Keep the history array from overflowing during very long games.
     void compact_history();
+    // Recompute the accumulator of the current position from scratch.
+    void refresh_accumulator();
 
   private:
     void put(int pc, int sq);

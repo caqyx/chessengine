@@ -1,12 +1,13 @@
-# Builds tessera.exe for Windows and publishes it as a downloadable file:
+# Builds tessera.exe and trainer.exe for Windows and publishes them as downloadable files:
 #   https://github.com/caqyx/chessengine/releases/download/windows-build/tessera.exe
+#   https://github.com/caqyx/chessengine/releases/download/windows-build/trainer.exe
 # Runs when the engine sources change, or by hand from the Actions tab.
 name: Windows build
 
 on:
   push:
     branches: [main]
-    paths: ['engine/src/**', 'engine/Makefile', '.github/workflows/windows-build.yml']
+    paths: ['engine/src/**', 'engine/Makefile', 'tools/trainer.cpp', '.github/workflows/windows-build.yml']
   workflow_dispatch:
 
 permissions:
@@ -23,18 +24,21 @@ jobs:
           cd engine
           g++ --version
           g++ -std=c++17 -O3 -DNDEBUG -fno-exceptions -fno-rtti -march=x86-64-v3 -static -pthread \
-              src/bitboard.cpp src/position.cpp src/movegen.cpp src/eval.cpp src/tt.cpp src/search.cpp src/uci.cpp \
+              src/bitboard.cpp src/position.cpp src/movegen.cpp src/eval.cpp src/nnue.cpp src/tt.cpp src/search.cpp src/uci.cpp \
               src/main_native.cpp -o tessera.exe
           ./tessera.exe perft 5
           ./tessera.exe bench 10
+          g++ -std=c++17 -O3 -march=x86-64-v3 -static -pthread ../tools/trainer.cpp -o trainer.exe
       - name: Publish as release file
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release view windows-build >/dev/null 2>&1 || gh release create windows-build --title "Windows build" --notes "tessera.exe built automatically from main (x86-64-v3: needs a CPU with AVX2, 2015 or newer)."
-          gh release upload windows-build engine/tessera.exe --clobber
+          gh release upload windows-build engine/tessera.exe engine/trainer.exe --clobber
       - uses: actions/upload-artifact@v4
         with:
           name: tessera-windows
-          path: engine/tessera.exe
+          path: |
+            engine/tessera.exe
+            engine/trainer.exe

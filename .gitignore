@@ -6,3 +6,7 @@ __pycache__/
 .DS_Store
 engine/tessera-tune
 data/local/
+engine/trainer
+engine/*.exe
+data/packed/
+nets/

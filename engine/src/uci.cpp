@@ -106,6 +106,22 @@ static void cmd_setoption(Tokens& t) {
         if (search_set_level((int)to_int(value.b))) { tt_clear(); search_clear(); }
     }
     else if (str_ieq(name.b, "Move Overhead")) MoveOverhead = iclamp((int)to_int(value.b), 0, 5000);
+    else if (str_ieq(name.b, "EvalFile")) {
+        size_t size = 0;
+        const unsigned char* data = plat_read_file(value.b, &size);
+        if (data && nnue_load(data, size)) {
+            Pos.refresh_accumulator();
+            tt_clear(); search_clear();
+            StrBuf b;
+            b.add("info string network loaded, hidden size "); b.add_int(NnueHidden);
+            plat_out(b.b);
+        } else plat_out("info string could not load network file");
+    }
+    else if (str_ieq(name.b, "Use NNUE")) {
+        nnue_set_active(str_ieq(value.b, "true"));
+        Pos.refresh_accumulator();
+        tt_clear(); search_clear();
+    }
     else if (str_ieq(name.b, "UCI_ShowWDL")) ShowWdl = str_ieq(value.b, "true");
     else if (str_ieq(name.b, "Opening Variety")) OpeningVariety = str_ieq(value.b, "true");
     else if (str_ieq(name.b, "EvalMask")) { EvalMask = (int)to_int(value.b); eval_clear(); tt_clear(); }
@@ -332,6 +348,8 @@ void uci_command(const char* line) {
         plat_out(b.b);
         plat_out("option name Level type spin default 10 min 1 max 10");
         plat_out("option name Move Overhead type spin default 10 min 0 max 5000");
+        plat_out("option name EvalFile type string default <empty>");
+        plat_out("option name Use NNUE type check default true");
         plat_out(ShowWdl ? "option name UCI_ShowWDL type check default true"
                          : "option name UCI_ShowWDL type check default false");
         plat_out(OpeningVariety ? "option name Opening Variety type check default true"
@@ -359,7 +377,8 @@ void uci_command(const char* line) {
     else if (str_eq(t.tok, "datagen")) cmd_datagen(t);
     else if (str_eq(t.tok, "eval")) {
         StrBuf b;
-        b.add("eval "); b.add_int(evaluate(Pos)); b.add(" cp (side to move)");
+        b.add("eval "); b.add_int(NnueActive ? nnue_evaluate(Pos) : evaluate(Pos));
+        b.add(NnueActive ? " cp (side to move, network)" : " cp (side to move, hand-written)");
         plat_out(b.b);
     } else if (str_eq(t.tok, "d")) {
         char fen[128];

@@ -60,8 +60,78 @@ What to expect:
 - Each game gives the two sides different random thinking budgets
   (1,000 to 10,000 positions per move), so stronger and weaker players meet.
 
-## Step 2: train the network
+## Step 2: train the network (stop and resume freely)
 
-Not written yet. It will be a second script with the same stop-and-resume
-behaviour (it saves a checkpoint after every pass over the data), running on
-the graphics card. It reads `data/local/` plus the files in `data/`.
+Training runs on the CPU with all threads; no graphics card or Python packages
+are needed. It is fast: about 350,000 positions per second per CPU thread here,
+so a pass over 40 million positions takes well under a minute on a 12-thread CPU.
+
+### Windows
+
+```powershell
+cd chessengine
+git pull                                  # get the training script and the newest sources
+curl.exe -L -o engine\tessera.exe https://github.com/caqyx/chessengine/releases/download/windows-build/tessera.exe   # newest engine (can load networks)
+curl.exe -L -o engine\trainer.exe https://github.com/caqyx/chessengine/releases/download/windows-build/trainer.exe   # the trainer
+python tools\train_net.py                 # convert the data, then train
+```
+
+### Linux / WSL
+
+```bash
+cd ~/chessengine
+git pull                                  # get the training script and the newest sources
+make -C engine && make -C engine trainer  # rebuild the engine (can load networks) and build the trainer
+python3 tools/train_net.py                # convert the data, then train
+```
+
+### Using it
+
+```bash
+python3 tools/train_net.py                # start, or continue where you stopped
+# Ctrl+C                                  # stop: it saves and exits within a second or two
+python3 tools/train_net.py --fresh        # start over, e.g. after generating a lot more data
+python3 tools/train_net.py --hidden 64    # a smaller network (default 128)
+```
+
+What happens:
+
+1. Every data file is converted once to a compact form in `data/packed/`
+   (the files in `data/` and everything in `data/local/`). Unchanged files are
+   skipped on later runs.
+2. The trainer makes several passes over the data. After each pass it tests the
+   network on games it never trained on (2% of every file) and prints that as
+   "held-out loss". Only a network that improves on it is written to
+   `nets/tessera.nnue`, so training too long cannot make the saved network worse.
+3. Progress is in `nets/checkpoint.bin`. Stopping in the middle of a pass is
+   fine; the next run continues from the same step.
+
+### Is the network better? Measure it
+
+The engine keeps using the hand-written evaluation unless told to load a network:
+
+```bash
+pip install chess                         # match runner dependency (python-chess)
+python3 tools/match.py --e1 engine/tessera --e2 engine/tessera \
+    --opt1 "EvalFile=nets/tessera.nnue" --movetime 100 --games 200 --concurrency 4
+# engine 1 = with the network, engine 2 = hand-written; the Elo line is from the network's point of view
+```
+
+(On Windows use `engine\tessera.exe` and `nets\tessera.nnue`.)
+
+What to expect, from the tests done while building this (300 games each at
+20,000 nodes per move, network against the hand-written evaluation):
+
+| Training positions | What the network was taught | Result for the network |
+|---|---|---|
+| 2 million | half game result, half search score | -263 Elo |
+| 4 million | half game result, half search score | -147 Elo |
+| 8 million | half game result, half search score | -147 Elo |
+| 7 million | search score only | -56 Elo |
+| 7 million | 80% search score, 20% game result (the default now) | -10 Elo [-42, +21] |
+
+Two lessons: more data helps, and what the network is asked to predict matters
+even more. With the default settings and only 7 million positions the network
+is already level with the hand-written evaluation, so with 30 to 40 million it
+has a good chance of passing it. The match above is what decides; if it is
+still behind, generate more (step 1) and train again with `--fresh`.

@@ -3,11 +3,14 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <thread>
 
 #include "platform.h"
+#include "position.h"
 #include "search.h"
 #include "uci.h"
 
@@ -27,8 +30,59 @@ void* plat_big_realloc(void* old, size_t, size_t newBytes) {
     return p;
 }
 
+const unsigned char* plat_read_file(const char* path, size_t* size) {
+    static std::string buffer;   // one file at a time is enough: the network
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return nullptr;
+    buffer.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    *size = buffer.size();
+    return (const unsigned char*)buffer.data();
+}
+
+// tessera pack <in.txt> <out.bin>
+// Converts "fen;score;result" lines (or "fen;result") into fixed 68-byte records for the
+// trainer: 32 network input numbers from White's side (768 = unused slot), the score for
+// White in centipawns (32767 = none), side to move (0 = White) and twice the result for White.
+static int pack_file(const char* inPath, const char* outPath) {
+    std::ifstream in(inPath);
+    FILE* out = std::fopen(outPath, "wb");
+    if (!in || !out) { std::fprintf(stderr, "pack: cannot open files\n"); return 1; }
+    static Position pos;
+    std::string line;
+    size_t written = 0, skipped = 0;
+    while (std::getline(in, line)) {
+        size_t first = line.find(';'), last = line.rfind(';');
+        if (first == std::string::npos || !pos.set(line.substr(0, first).c_str())) { skipped++; continue; }
+        unsigned char rec[68];
+        int n = 0;
+        for (Bitboard b = pos.all(); b && n < 32;) {
+            int sq = pop_lsb(b);
+            int f = nnue_input(WHITE, pos.board[sq], sq);
+            rec[2 * n] = (unsigned char)(f & 255); rec[2 * n + 1] = (unsigned char)(f >> 8);
+            n++;
+        }
+        for (; n < 32; n++) { rec[2 * n] = 768 & 255; rec[2 * n + 1] = 768 >> 8; }
+        int score = 32767;
+        if (last != first) {
+            score = std::atoi(line.c_str() + first + 1);
+            if (score > 32000) score = 32000;
+            if (score < -32000) score = -32000;
+        }
+        double result = std::atof(line.c_str() + last + 1);
+        rec[64] = (unsigned char)(score & 255); rec[65] = (unsigned char)((score >> 8) & 255);
+        rec[66] = (unsigned char)pos.stm;
+        rec[67] = (unsigned char)(result * 2 + 0.5);
+        std::fwrite(rec, 1, sizeof(rec), out);
+        written++;
+    }
+    std::fclose(out);
+    std::printf("packed %zu positions (%zu lines skipped)\n", written, skipped);
+    return 0;
+}
+
 int main(int argc, char** argv) {
     engine_init();
+    if (argc == 4 && std::strcmp(argv[1], "pack") == 0) return pack_file(argv[2], argv[3]);
 
     // Commands given on the command line run once and exit, e.g. `tessera bench`.
     if (argc > 1) {

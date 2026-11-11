@@ -53,6 +53,8 @@ void* plat_big_realloc(void*, size_t, size_t newBytes) {
     return (void*)base;
 }
 
+const unsigned char* plat_read_file(const char*, size_t*) { return nullptr; }   // no files in the browser
+
 static char CmdBuffer[65536];
 
 extern "C" {

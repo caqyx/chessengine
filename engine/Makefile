@@ -1,11 +1,12 @@
 # Tessera chess engine
 #   make            native UCI binary  -> engine/tessera
 #   make wasm       WebAssembly module -> engine/web/engine.wasm (used by the browser game)
+#   make trainer    network trainer    -> engine/trainer (see docs/training.md)
 #   make test       perft + self-test
 
 CXX      ?= g++
 ARCH     ?= native
-CORE     := src/bitboard.cpp src/position.cpp src/movegen.cpp src/eval.cpp src/tt.cpp src/search.cpp src/uci.cpp
+CORE     := src/bitboard.cpp src/position.cpp src/movegen.cpp src/eval.cpp src/nnue.cpp src/tt.cpp src/search.cpp src/uci.cpp
 CXXFLAGS := -std=c++17 -O3 -DNDEBUG -Wall -Wextra -fno-exceptions -fno-rtti
 
 native: tessera
@@ -23,6 +24,10 @@ web/engine.wasm: $(CORE) src/main_wasm.cpp src/*.h
 	    -Wl,--no-entry -Wl,--stack-first -Wl,-z,stack-size=4194304 -Wl,--lto-O3 \
 	    $(CORE) src/main_wasm.cpp -o $@
 
+# Network trainer (CPU, no dependencies). Used by tools/train_net.py.
+trainer: ../tools/trainer.cpp
+	$(CXX) -std=c++17 -O3 -march=$(ARCH) -pthread ../tools/trainer.cpp -o $@
+
 # Same engine with the search thresholds exposed as UCI options, for match testing.
 tessera-tune: $(CORE) src/main_native.cpp src/*.h
 	$(CXX) $(CXXFLAGS) -DTUNE_SEARCH -march=$(ARCH) -flto -pthread $(CORE) src/main_native.cpp -o $@
@@ -32,6 +37,6 @@ test: tessera
 	./tessera selftest
 
 clean:
-	rm -f tessera tessera-tune web/engine.wasm
+	rm -f tessera tessera-tune trainer web/engine.wasm
 
 .PHONY: native wasm test clean

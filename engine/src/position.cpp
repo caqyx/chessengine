@@ -157,7 +157,12 @@ bool Position::set(const char* f) {
     update_check_info();
     // The side that just moved must not be left in check.
     if (attackers_to(king_sq(!stm), all()) & byColor[stm]) return false;
+    refresh_accumulator();
     return true;
+}
+
+void Position::refresh_accumulator() {
+    if (NnueActive) nnue_refresh(*this, accStack[st - states]);
 }
 
 void Position::fen(char* out) const {
@@ -258,6 +263,20 @@ void Position::make(Move m) {
     stm = them;
     if (us == BLACK) fullmove++;
     update_check_info();
+
+    if (NnueActive) {
+        // The move switched a few network inputs: copy the parent's accumulator and patch it.
+        i16 (*acc)[NNUE_MAX_H] = accStack[n - states];
+        nnue_copy(acc, accStack[n - states - 1]);
+        if (captured != NO_PIECE) nnue_sub(acc, captured, flag == MF_EP ? (us == WHITE ? to - 8 : to + 8) : to);
+        nnue_sub(acc, pc, from);
+        nnue_add(acc, (flag & 8) ? make_piece(us, promo_type(m)) : pc, to);
+        if (flag == MF_KCASTLE || flag == MF_QCASTLE) {
+            const int rook = make_piece(us, ROOK);
+            nnue_sub(acc, rook, flag == MF_KCASTLE ? to + 1 : to - 2);
+            nnue_add(acc, rook, flag == MF_KCASTLE ? to - 1 : to + 1);
+        }
+    }
 }
 
 void Position::unmake(Move m) {
@@ -288,6 +307,7 @@ void Position::make_null() {
     n->move = MOVE_NULL;
     n->checkers = 0;
     stm = !stm;
+    if (NnueActive) nnue_copy(accStack[n - states], accStack[n - states - 1]);
 }
 
 void Position::unmake_null() {
@@ -486,6 +506,7 @@ void Position::compact_history() {
     State* src = st - keep;
     for (int i = 0; i <= keep; i++) states[i] = src[i];
     st = states + keep;
+    refresh_accumulator();   // older accumulators are never read again
 }
 
 u64 perft(Position& pos, int depth) {
