@@ -23,7 +23,7 @@ int SearchMask = 255;   // 1 check ext, 2 singular, 4 probcut, 8 correction hist
 #else
 #define SPARAM(name, value) static const int name = value;
 #endif
-SPARAM(RfpMargin, 70)
+SPARAM(RfpMargin, 42)
 SPARAM(RazorMargin, 260)
 SPARAM(NmpBase, 4)
 SPARAM(NmpDiv, 3)

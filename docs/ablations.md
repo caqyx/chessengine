@@ -88,6 +88,50 @@ Three things learned on the way:
 
 The ablation tables above were measured with the hand-set weights.
 
+## Second tuning round: 50,000 games, king safety included
+
+Data: 4,056,141 positions from about 50,000 self-play games (`data/`). The tuner
+now also fits the king-safety weights (shelter and storm tables, and the weights
+of the danger sum, through the squared penalty) and uses mini-batch Adam.
+
+| Match (20,000 nodes per move unless noted) | Games | W-D-L | Elo |
+|---|---|---|---|
+| Re-tuned, one value per piece type, vs round-one weights | 400 | 168-136-96 | +63 [+36, +92] |
+| Re-tuned, all piece-square entries free, vs the row above | 400 | 140-160-100 | +35 [+9, +62] |
+| Shipped (free) vs round-one weights, 100,000 nodes | 200 | 64-84-52 | +21 [-16, +58] |
+
+With 50,000 games the free piece-square tables now generalise (validation error
+0.08625 against 0.08652 for the tied variant), the opposite of round one with
+13,000 games. As in round one, the gain is large at a small search budget and
+much smaller, not statistically secured, at a deeper one.
+
+The tuned evaluation is about 20% larger in scale than the hand-set one. Scaling
+it back down for the search (`SP_EvalScale=82`) changed nothing: -7 [-36, +22]
+over 300 games at 50,000 nodes.
+
+## Search thresholds (coarse tests)
+
+Build `make tessera-tune` to get the thresholds as `SP_*` UCI options. Each row
+is one changed value against the defaults, 400 games at 20,000 nodes.
+
+| Change | W-D-L | Elo | Decision |
+|---|---|---|---|
+| Reverse futility margin 70 -> 90 | 88-144-168 | -70 [-98, -43] | rejected |
+| Reverse futility margin 70 -> 55 | 112-148-140 | -24 [-52, +3] | inconclusive |
+| Reverse futility margin 70 -> 42 | 140-156-104 | +31 [+5, +58] | adopted after the check below |
+| Same, 200 games at 100,000 nodes | 50-114-36 | +24 [-7, +56] | |
+| Futility multiplier 80 -> 110 | 84-168-148 | -56 [-82, -30] | rejected |
+| LMR divisor 2.36 -> 2.05 (reduce more) | 88-212-100 | -10 [-34, +13] | no change |
+| LMR divisor 2.36 -> 2.75 (reduce less) | 124-172-104 | +17 [-8, +43] | no change |
+| Null move base reduction 4 -> 3 | 120-176-104 | +14 [-12, +40] | no change |
+
+Honest reading: loosening the pruning margins clearly hurts; tightening the
+reverse futility margin to 42 was positive in two independent matches and is
+now the default, although the 55 result does not fit a smooth curve, so part of
+this is noise. Each test can only see effects of about 25 Elo or more. Tuning
+all thresholds together (SPSA) needs tens of thousands of games and was not done.
+Untested but suggested by the table: a smaller futility multiplier.
+
 ## What these numbers do not say
 
 They compare Tessera with itself. They say nothing about absolute strength;

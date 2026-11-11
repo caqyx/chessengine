@@ -21,6 +21,7 @@ cd engine
 make              # native UCI binary -> engine/tessera   (g++ or clang++)
 make wasm         # WebAssembly build -> engine/web/engine.wasm   (clang with wasm32 target + wasm-ld)
 make test         # perft from the start position + internal consistency self-test
+make tessera-tune # same engine with search thresholds as UCI options (SP_*), for match tests
 ./tessera bench   # fixed-depth search over 12 positions; node count must match between builds
 ```
 
@@ -50,7 +51,7 @@ Use the native binary in any UCI GUI (Cute Chess, Arena, En Croissant, ...). Opt
 
 **Evaluation.** Hand-crafted, tapered between middlegame and endgame: material and piece-square tables (PeSTO), pawn structure (isolated, doubled, connected, passed; cached in a pawn hash), mobility, outposts, rooks on open files, bishop pair, king safety (pawn shelter plus an attack-unit danger model with safe checks), passed-pawn advancement and king distance, threats, and endgame scaling for drawish material (opposite bishops, no pawns, KBN-K corner knowledge).
 
-**Tuning.** The weights in `engine/src/eval_params.h` are not hand-picked: `tessera datagen` plays self-play games and writes out quiet positions with the game result, and `tools/tuner.cpp` fits the weights so that the evaluation predicts those results (Texel tuning: logistic regression by gradient descent, validated on games it never trained on). One pass over about 13,000 games scored 60% against the hand-set weights over 820 self-play games (about +70 Elo; individual matches ranged from +31 to +111, see `docs/ablations.md`).
+**Tuning.** The weights in `engine/src/eval_params.h` are not hand-picked: `tessera datagen` plays self-play games and writes out quiet positions with the search score and the game result, and `tools/tuner.cpp` fits the weights so that the evaluation predicts those results (Texel tuning: logistic regression by gradient descent, validated on games it never trained on). It covers piece-square tables, mobility, pawn structure, threats and the king-safety weights. Two rounds on about 50,000 games (stored in `data/`) each gained clearly at small search budgets and less at larger ones; the measurements are in `docs/ablations.md`.
 
 **Levels.** Levels 1-9 cap the search depth and add deterministic per-position noise to the evaluation, so weaker levels make plausible human-like mistakes instead of random moves.
 
@@ -72,7 +73,7 @@ What has been verified in this repository:
 
 - perft matches the published node counts on six positions; `selftest` cross-checks `pseudo_legal()`, `gives_check()` and the incremental hash on 13.8 M random probes with 0 errors;
 - native and wasm builds search exactly the same tree (`bench` node counts are identical);
-- self-play ablations at a fixed node budget (`docs/ablations.md`): every evaluation term gains 50-80 Elo, the full evaluation gains about +168 over material and piece-square tables alone, singular extensions gain about +67, and tuning the weights on self-play games gained about +70 more (matches ranged from +31 to +111); three search features (ProbCut, check extension, correction history) are within noise;
+- self-play ablations at a fixed node budget (`docs/ablations.md`): every evaluation term gains 50-80 Elo, the full evaluation gains about +168 over material and piece-square tables alone, singular extensions gain about +67, and two rounds of tuning the weights on self-play games each gained further (between about +20 and +110 depending on the search budget); three search features (ProbCut, check extension, correction history) are within noise;
 - the game was driven in headless Chrome against the real wasm engine at phone and desktop sizes (moves by tap and drag, promotion, clocks, analysis, PGN/FEN, reload restore). Not tested: Safari, Firefox, a physical phone.
 
 What has not been measured: strength against any other engine, including Stockfish. No Elo number is claimed here.
@@ -95,6 +96,7 @@ engine/web/                engine.wasm + engine-worker.js used by the game
 docs/engine-protocol.md    contract between game and engine worker
 tools/match.py             engine-vs-engine match runner
 tools/tuner.cpp            fits the evaluation weights to self-play games
+data/                      4 million self-play positions with scores and results
 ```
 
 ## Credits
