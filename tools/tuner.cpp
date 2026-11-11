@@ -250,6 +250,25 @@ int main(int argc, char** argv) {
     std::copy(bestEg.begin(), bestEg.end(), Eg);
     std::printf("kept weights with validation %.6f\n", bestVal);
 
+    // Table entries that almost never occur (a queen with 26 safe squares, a connected pawn
+    // on the 7th rank) get fitted to noise. Give them the value of the nearest entry in the
+    // same table that was seen often enough to trust.
+    const int trusted = (int)(Samples.size() / 100);
+    for (const Group& g : Groups) {
+        for (int i = 0; i < g.count; i++) {
+            if (seen[g.first + i] == 0 || seen[g.first + i] >= trusted) continue;
+            for (int d = 1; d < g.count; d++) {
+                int j = i - d >= 0 && seen[g.first + i - d] >= trusted ? i - d
+                      : i + d < g.count && seen[g.first + i + d] >= trusted ? i + d : -1;
+                if (j < 0) continue;
+                std::printf("%s[%d] seen %d times: using the value of [%d]\n", g.name, i, seen[g.first + i], j);
+                Mg[g.first + i] = bestMg[g.first + j];
+                Eg[g.first + i] = bestEg[g.first + j];
+                break;
+            }
+        }
+    }
+
     // Average piece values, as a sanity check a human can read.
     static const char* names[5] = {"pawn", "knight", "bishop", "rook", "queen"};
     for (int pt = 0; pt < 5; pt++) {

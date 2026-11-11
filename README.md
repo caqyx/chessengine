@@ -50,7 +50,7 @@ Use the native binary in any UCI GUI (Cute Chess, Arena, En Croissant, ...). Opt
 
 **Evaluation.** Hand-crafted, tapered between middlegame and endgame: material and piece-square tables (PeSTO), pawn structure (isolated, doubled, connected, passed; cached in a pawn hash), mobility, outposts, rooks on open files, bishop pair, king safety (pawn shelter plus an attack-unit danger model with safe checks), passed-pawn advancement and king distance, threats, and endgame scaling for drawish material (opposite bishops, no pawns, KBN-K corner knowledge).
 
-**Tuning.** The weights in `engine/src/eval_params.h` are not hand-picked: `tessera datagen` plays self-play games and writes out quiet positions with the game result, and `tools/tuner.cpp` fits the weights so that the evaluation predicts those results (Texel tuning: logistic regression by gradient descent, validated on games it never trained on). One pass over about 13,000 games gained roughly 80-110 Elo in self-play.
+**Tuning.** The weights in `engine/src/eval_params.h` are not hand-picked: `tessera datagen` plays self-play games and writes out quiet positions with the game result, and `tools/tuner.cpp` fits the weights so that the evaluation predicts those results (Texel tuning: logistic regression by gradient descent, validated on games it never trained on). One pass over about 13,000 games scored 60% against the hand-set weights over 820 self-play games (about +70 Elo; individual matches ranged from +31 to +111, see `docs/ablations.md`).
 
 **Levels.** Levels 1-9 cap the search depth and add deterministic per-position noise to the evaluation, so weaker levels make plausible human-like mistakes instead of random moves.
 
@@ -72,7 +72,7 @@ What has been verified in this repository:
 
 - perft matches the published node counts on six positions; `selftest` cross-checks `pseudo_legal()`, `gives_check()` and the incremental hash on 13.8 M random probes with 0 errors;
 - native and wasm builds search exactly the same tree (`bench` node counts are identical);
-- self-play ablations at a fixed node budget (`docs/ablations.md`): every evaluation term gains 50-80 Elo, the full evaluation gains about +168 over material and piece-square tables alone, singular extensions gain about +67, and tuning the weights on self-play games gained a further 80-110; three search features (ProbCut, check extension, correction history) are within noise;
+- self-play ablations at a fixed node budget (`docs/ablations.md`): every evaluation term gains 50-80 Elo, the full evaluation gains about +168 over material and piece-square tables alone, singular extensions gain about +67, and tuning the weights on self-play games gained about +70 more (matches ranged from +31 to +111); three search features (ProbCut, check extension, correction history) are within noise;
 - the game was driven in headless Chrome against the real wasm engine at phone and desktop sizes (moves by tap and drag, promotion, clocks, analysis, PGN/FEN, reload restore). Not tested: Safari, Firefox, a physical phone.
 
 What has not been measured: strength against any other engine, including Stockfish. No Elo number is claimed here.

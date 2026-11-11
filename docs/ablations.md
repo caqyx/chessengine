@@ -59,13 +59,22 @@ of the piece-square tables, mobility tables, pawn-structure, passed-pawn rank,
 outpost, open-file, bishop-pair and threat weights. Not tuned: king safety,
 passed-pawn race terms, endgame knowledge.
 
-| Match (tuned vs hand-set weights) | Games | W-D-L | Elo for tuned |
-|---|---|---|---|
-| 20,000 nodes per move, first pass (400 epochs) | 300 | 132-129-39 | +111 [+82, +142] |
-| 100,000 nodes per move, final weights | 200 | 84-78-38 | +81 [+44, +120] |
-| 60 ms per move, final weights | 120 | 39-54-27 | +35 [-11, +82] |
+| Match against the hand-set weights | Weights | Games | W-D-L | Elo for tuned |
+|---|---|---|---|---|
+| 20,000 nodes per move | first pass (400 epochs) | 300 | 132-129-39 | +111 [+82, +142] |
+| 100,000 nodes per move | second pass (1500 epochs) | 200 | 84-78-38 | +81 [+44, +120] |
+| 60 ms per move | second pass | 120 | 39-54-27 | +35 [-11, +82] |
+| 50,000 nodes per move | shipped | 200 | 66-86-48 | +31 [-5, +68] |
 
-Two things learned on the way:
+The four matches disagree more than one would like. Pooled, the tuned weights
+scored 60.3% over 820 games, about +70 Elo; the honest reading is "clearly
+better, somewhere between +30 and +110, probably smaller at longer thinking
+times". The shipped weights are the second pass with rarely-used table entries
+(for example a queen attacking 20 or more safe squares) replaced by their
+nearest well-sampled neighbour; head to head they are level with the second
+pass (-10 [-41, +20] over 300 games).
+
+Three things learned on the way:
 
 - Validation has to be on whole games the tuner never saw. With positions of the
   same game on both sides of the split, the error looked great while the weights
@@ -73,6 +82,9 @@ Two things learned on the way:
 - Tuning all 384 piece-square entries separately lost 49 Elo [-79, -19] against
   tuning one value per piece type: 13,000 games are too few for that many
   free parameters.
+- Table entries seen in fewer than 1% of positions were fitted to noise and are
+  now filled from neighbours. Many of the remaining values are still jumpy; more
+  games would smooth them.
 
 The ablation tables above were measured with the hand-set weights.
 
