@@ -653,7 +653,7 @@ static int search(Position& pos, Stack* ss, int alpha, int beta, int depth, bool
 // Win / draw / loss chances for a score, fitted to how Tessera's own self-play games
 // ended (tools/fit_wdl.py). "a" is the score at which a win becomes a coin flip and "b"
 // how gradual the change is; both depend on how much material is left.
-static const double WdlA0 = 280.9, WdlA1 = -206.9, WdlB0 = 122.8, WdlB1 = 38.6;
+static const double WdlA0 = 291.9, WdlA1 = -215.9, WdlB0 = 134.4, WdlB1 = 31.6;
 static int RootPhase = 24;
 
 static double exp_approx(double x) {

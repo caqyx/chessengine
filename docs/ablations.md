@@ -132,6 +132,41 @@ this is noise. Each test can only see effects of about 25 Elo or more. Tuning
 all thresholds together (SPSA) needs tens of thousands of games and was not done.
 Untested but suggested by the table: a smaller futility multiplier.
 
+## Third tuning round: 100,000 games, half of them mixed strength
+
+50,000 more games in which each side got its own random budget (1,000 to
+10,000 nodes per move), added to the earlier 50,000: 8,094,082 positions.
+
+| Match (20,000 nodes per move) | Games | W-D-L | Elo |
+|---|---|---|---|
+| Weights re-fitted on all 100,000 games vs the shipped ones | 400 | 120-148-132 | -10 [-38, +17] |
+
+No gain, so these weights were not adopted. Doubling the data no longer helps:
+about a thousand hand-designed weights have taken what they can from this kind
+of data. More strength from the evaluation now needs a model with more
+capacity (a neural network), which is what the saved games are for.
+
+## Win / draw / loss model
+
+`tools/fit_wdl.py` fits the chances the game shows to the results of the
+7,070,000 positions that have a search score. Check on held-out games:
+
+| Score for White (cp) | Predicted W / D / L | Actual W / D / L |
+|---|---|---|
+| below -400 | 1 / 6 / 94 % | 1 / 9 / 90 % |
+| -400 to -200 | 5 / 29 / 66 % | 5 / 23 / 72 % |
+| -200 to -100 | 12 / 42 / 46 % | 12 / 39 / 49 % |
+| -100 to -30 | 21 / 44 / 36 % | 20 / 45 / 35 % |
+| -30 to 30 | 26 / 48 / 26 % | 23 / 54 / 23 % |
+| 30 to 100 | 36 / 43 / 21 % | 36 / 45 / 20 % |
+| 100 to 200 | 46 / 42 / 13 % | 48 / 39 / 13 % |
+| 200 to 400 | 65 / 30 / 5 % | 71 / 23 / 6 % |
+| above 400 | 93 / 6 / 1 % | 90 / 10 / 1 % |
+
+Within a few points everywhere, with too few draws predicted near equality and
+too many when one side is clearly ahead. The chances describe Tessera playing
+itself at fast speed, not a human game.
+
 ## What these numbers do not say
 
 They compare Tessera with itself. They say nothing about absolute strength;
