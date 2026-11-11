@@ -75,10 +75,16 @@ What has been verified in this repository:
 
 What has not been measured: strength against any other engine, including Stockfish. No Elo number is claimed here.
 
+### Rate it in the browser
+
+`rate.html` plays Tessera against Stockfish (the small single-threaded browser build, vendored in `third_party/stockfish/` under the GPLv3) with Stockfish's strength capped via `UCI_Elo`. The cap follows the running estimate, both engines get the same time per move, and the page shows an Elo estimate with a 95% interval. About 20 games give roughly +/-150; it works on a phone. The number is a rough placement: the cap was calibrated by Stockfish's authors at much longer time controls.
+
 ## Layout
 
 ```
 index.html                 the game
+rate.html                  in-browser rating match against capped Stockfish
+third_party/stockfish/     Stockfish.js lite build (GPLv3, not part of Tessera)
 game/js/chess.js           rules: legal moves, FEN, SAN, PGN, draw rules (perft-tested)
 game/js/*.js, game/css/    UI
 game/test/rules.test.mjs   node game/test/rules.test.mjs

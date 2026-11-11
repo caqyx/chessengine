@@ -1,0 +1,211 @@
+/*
+ * rate.css - the rating page (rate.html). Uses the tokens from base.css and the piece
+ * colours from board.css; everything else on that page is laid out here.
+ */
+
+body.rate {
+  overflow: auto;
+}
+
+.rate-page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 16px 16px 48px;
+}
+
+.rate-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rate-head h1 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 1.75rem;
+}
+
+.rate-head .btn {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.rate-lede {
+  margin: 12px 0 20px;
+  color: var(--ink-muted);
+  line-height: 1.5;
+}
+
+.rate-estimate {
+  padding: 16px 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+
+.rate-number {
+  font-family: var(--font-serif);
+  font-size: 3rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.rate-number small {
+  font-size: 1.25rem;
+  color: var(--ink-muted);
+}
+
+.rate-sub {
+  margin-top: 4px;
+  color: var(--ink-muted);
+}
+
+.rate-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 20px 0 12px;
+}
+
+.rate-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+}
+
+.rate-field select {
+  min-height: var(--tap);
+  padding: 0 12px;
+  font: inherit;
+  font-size: 1rem;
+  color: var(--ink);
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.rate-controls .btn {
+  min-height: var(--tap);
+}
+
+.rate-status {
+  margin: 12px 0;
+  min-height: 1.5em;
+  font-variant-numeric: tabular-nums;
+}
+
+.rate-error {
+  margin: 12px 0;
+  padding: 12px;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  overflow-wrap: anywhere;
+}
+
+.rate-board-wrap {
+  max-width: 360px;
+  margin: 16px auto;
+}
+
+.rate-board {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  grid-template-rows: repeat(8, 1fr);
+  aspect-ratio: 1;
+  border: 1px solid var(--rule);
+}
+
+.rate-board .sq {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--sq-light);
+}
+
+.rate-board .sq.dark {
+  background: var(--sq-dark);
+}
+
+.rate-board .sq.last::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  opacity: 0.4;
+}
+
+.rate-board .piece-svg {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.rate-results h2 {
+  margin: 24px 0 8px;
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 1.25rem;
+}
+
+.rate-results table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.rate-results th,
+.rate-results td {
+  padding: 8px 6px;
+  text-align: left;
+  border-bottom: 1px solid var(--rule);
+}
+
+.rate-results th {
+  font-weight: 500;
+  color: var(--ink-muted);
+}
+
+.rate-log {
+  margin-top: 24px;
+  color: var(--ink-muted);
+}
+
+.rate-log summary {
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.rate-log pre {
+  max-height: 240px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.rate-foot {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--ink-muted);
+}
+
+.rate-foot a {
+  color: inherit;
+}
