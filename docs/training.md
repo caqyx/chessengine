@@ -9,23 +9,23 @@ continued as often as you like.
 
 ### Windows
 
-The engine needs a GCC or Clang compiler, which is simplest to get through WSL
-(Ubuntu running inside Windows).
+No compiler needed: GitHub builds `tessera.exe` automatically from the current
+sources (`.github/workflows/windows-build.yml`). In PowerShell:
 
 ```powershell
-wsl --install -d Ubuntu     # one time, in PowerShell as administrator; reboot if it asks, then open "Ubuntu" from the Start menu
-```
-
-Then, inside the Ubuntu window:
-
-```bash
-sudo apt update && sudo apt install -y g++ make python3 git   # compiler, build tool, Python, git
-cd ~                                                          # stay in the Linux home folder: /mnt/c is several times slower
-git clone https://github.com/caqyx/chessengine.git            # download the project
+winget install Python.Python.3.12        # skip if "python --version" already works
+winget install Git.Git                   # skip if "git --version" already works; reopen PowerShell after installing
+git clone https://github.com/caqyx/chessengine.git      # download the project
 cd chessengine
-make -C engine                                                # build the engine, optimised for your CPU
-python3 tools/gen_data.py                                     # start generating
+curl.exe -L -o engine\tessera.exe https://github.com/caqyx/chessengine/releases/download/windows-build/tessera.exe   # the ready-made engine
+python tools\gen_data.py                 # start generating
 ```
+
+The download is built for CPUs with AVX2 (anything from about 2015 on). To get
+a newer engine later, run the `curl.exe` line again after `git pull`.
+
+Building it yourself is optional: install WSL (`wsl --install -d Ubuntu`) or
+MSYS2 and follow the Linux steps.
 
 ### Linux
 
@@ -44,7 +44,7 @@ python3 tools/gen_data.py                 # start, or continue where you stopped
 # Ctrl+C                                  # stop: everything finished so far is already saved
 python3 tools/gen_data.py --threads 6     # use fewer CPU threads if you want the PC to stay responsive
 python3 tools/gen_data.py --target 30000000   # a different goal than the default 100 million positions
-git pull && make -C engine                # later: get a newer engine before continuing (old data stays valid)
+git pull && make -C engine                # later, Linux: get a newer engine before continuing (old data stays valid)
 ```
 
 What to expect:
