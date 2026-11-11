@@ -122,3 +122,14 @@ static const int ThreatByPawn = S(71, 14);
 static const int ThreatMinorOnMajor = S(46, 6);
 static const int ThreatRookOnQueen = S(44, 15);
 static const int Hanging = S(20, 51);
+
+// King safety. Shelter and storm are middlegame-only values indexed by the rank of the
+// nearest own / enemy pawn in front of the king on a file (index 0 = no pawn there).
+static const int ShelterBonus[8] = {-28, 30, 18, 4, -4, -10, -14, 0};
+static const int StormPenalty[8] = {0, 0, 28, 16, 6, 0, 0, 0};
+// Weights of the king danger ingredients, in the order of the KD_ enum in eval_trace.h:
+// attackers x knights, x bishops, x rooks, x queens, attacked squares by the king,
+// weak ring squares, safe rook / queen / bishop / knight check, attacker has no queen, constant.
+static const int KingDanger[12] = {80, 50, 45, 10, 70, 180, 1000, 750, 600, 800, -850, 40};
+// Endgame share of the penalty: danger * KingDangerEg / 256.
+static const int KingDangerEg = 10;

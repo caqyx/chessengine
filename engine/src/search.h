@@ -22,6 +22,13 @@ extern int MoveOverhead;
 extern bool OpeningVariety;   // small eval noise in the first moves so games differ
 extern int SearchMask;   // debug switch for A/B testing search features
 
+#ifdef TUNE_SEARCH
+int search_param_count();
+const char* search_param_name(int i);
+int search_param_value(int i);
+void search_param_set(int i, int value);
+#endif
+
 void search_init();
 void search_clear();                 // forget everything learned (new game)
 void search_set_level(int level);    // 1..10, 10 = full strength

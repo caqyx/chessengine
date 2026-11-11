@@ -105,6 +105,12 @@ static void cmd_setoption(Tokens& t) {
     else if (str_ieq(name.b, "Opening Variety")) OpeningVariety = str_ieq(value.b, "true");
     else if (str_ieq(name.b, "EvalMask")) { EvalMask = (int)to_int(value.b); eval_clear(); tt_clear(); }
     else if (str_ieq(name.b, "SearchMask")) SearchMask = (int)to_int(value.b);
+#ifdef TUNE_SEARCH
+    else if (name.b[0] == 'S' && name.b[1] == 'P' && name.b[2] == '_') {
+        for (int i = 0; i < search_param_count(); i++)
+            if (str_ieq(name.b + 3, search_param_name(i))) search_param_set(i, (int)to_int(value.b));
+    }
+#endif
     else if (str_ieq(name.b, "Clear Hash")) { tt_clear(); search_clear(); eval_clear(); }
 }
 
@@ -186,8 +192,9 @@ static void cmd_bench(Tokens& t) {
     Pos.set(StartFen);
 }
 
-// Self-play data for evaluation tuning: prints "fen;result" for quiet positions,
-// where result is the final game result from White's point of view (1, 0.5, 0).
+// Self-play data for evaluation tuning and network training: prints
+// "fen;score;result" for quiet positions. score is the search score in centipawns and
+// result the final game result (1, 0.5, 0), both from White's point of view.
 static void cmd_datagen(Tokens& t) {
     int games = t.next() ? (int)to_int(t.tok) : 100;
     u64 nodes = t.next() ? (u64)to_int(t.tok) : 5000;
@@ -199,6 +206,7 @@ static void cmd_datagen(Tokens& t) {
     const bool variety = OpeningVariety;
     OpeningVariety = false;
     static char fens[400][96];
+    static int scores[400];
 
     for (int g = 0; g < games; g++) {
         Pos.set(StartFen);
@@ -226,7 +234,10 @@ static void cmd_datagen(Tokens& t) {
             } else winStreak = 0;
             drawStreak = (ply > 80 && iabs(r.score) <= 5) ? drawStreak + 1 : 0;
             if (drawStreak >= 12) { result2 = 1; break; }
-            if (!Pos.in_check() && !is_noisy(r.best) && iabs(r.score) < 1500 && nFens < 400) Pos.fen(fens[nFens++]);
+            if (!Pos.in_check() && !is_noisy(r.best) && iabs(r.score) < 1500 && nFens < 400) {
+                scores[nFens] = white;
+                Pos.fen(fens[nFens++]);
+            }
             Pos.make(r.best);
             Pos.compact_history();
         }
@@ -234,6 +245,8 @@ static void cmd_datagen(Tokens& t) {
         for (int i = 0; i < nFens; i++) {
             StrBuf b;
             b.add(fens[i]);
+            b.add_char(';');
+            b.add_int(scores[i]);
             b.add(result2 == 2 ? ";1" : result2 == 1 ? ";0.5" : ";0");
             plat_out(b.b);
         }
@@ -305,6 +318,14 @@ void uci_command(const char* line) {
         plat_out("option name Clear Hash type button");
         plat_out("option name EvalMask type spin default 31 min 0 max 31");
         plat_out("option name SearchMask type spin default 255 min 0 max 255");
+#ifdef TUNE_SEARCH
+        for (int i = 0; i < search_param_count(); i++) {
+            StrBuf o;
+            o.add("option name SP_"); o.add(search_param_name(i));
+            o.add(" type spin default "); o.add_int(search_param_value(i)); o.add(" min -100000 max 100000");
+            plat_out(o.b);
+        }
+#endif
         plat_out("uciok");
     } else if (str_eq(t.tok, "isready")) plat_out("readyok");
     else if (str_eq(t.tok, "ucinewgame")) { tt_clear(); search_clear(); eval_clear(); }

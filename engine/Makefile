@@ -23,11 +23,15 @@ web/engine.wasm: $(CORE) src/main_wasm.cpp src/*.h
 	    -Wl,--no-entry -Wl,--stack-first -Wl,-z,stack-size=4194304 -Wl,--lto-O3 \
 	    $(CORE) src/main_wasm.cpp -o $@
 
+# Same engine with the search thresholds exposed as UCI options, for match testing.
+tessera-tune: $(CORE) src/main_native.cpp src/*.h
+	$(CXX) $(CXXFLAGS) -DTUNE_SEARCH -march=$(ARCH) -flto -pthread $(CORE) src/main_native.cpp -o $@
+
 test: tessera
 	./tessera perft 5
 	./tessera selftest
 
 clean:
-	rm -f tessera web/engine.wasm
+	rm -f tessera tessera-tune web/engine.wasm
 
 .PHONY: native wasm test clean

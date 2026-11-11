@@ -22,10 +22,7 @@ int EvalMask = 31;
 
 static const int Tempo = 16;
 
-static const int ShelterBonus[8] = {-28, 30, 18, 4, -4, -10, -14, 0};   // by rank of our pawn, 0 = no pawn
-static const int StormPenalty[8] = {0, 0, 28, 16, 6, 0, 0, 0};          // by rank of their pawn (from our side)
 
-static const int AttackerWeight[6] = {0, 80, 50, 45, 10, 0};
 
 struct PawnEntry {
     u64 key;
@@ -40,7 +37,7 @@ struct EvalInfo {
     Bitboard mobilityArea[2];
     Bitboard kingRing[2];
     int kingAttackers[2];       // number of pieces of color c attacking the enemy king ring
-    int kingAttackWeight[2];
+    int kingAttackersByType[2][6];
     int kingAttacks[2];         // attacked squares right next to the enemy king
     int ksq[2];
 };
@@ -106,7 +103,8 @@ static void init_info(const Position& pos, EvalInfo& ei, int us) {
     Bitboard ring = ka | bit(ksq);
     if (relative_rank(us, ksq) == 0) ring |= shift_up(ring, us);
     ei.kingRing[us] = ring;
-    ei.kingAttackers[us] = ei.kingAttackWeight[us] = ei.kingAttacks[us] = 0;
+    ei.kingAttackers[us] = ei.kingAttacks[us] = 0;
+    for (int pt = 0; pt < 6; pt++) ei.kingAttackersByType[us][pt] = 0;
 
     // Squares our pieces are not counted as mobile on: own king/queen,
     // own pawns that are blocked or still on the 2nd/3rd rank, enemy pawn attacks.
@@ -145,7 +143,7 @@ static int eval_pieces(const Position& pos, EvalInfo& ei, int us) {
 
             if (att & ei.kingRing[them]) {
                 ei.kingAttackers[us]++;
-                ei.kingAttackWeight[us] += AttackerWeight[pt];
+                ei.kingAttackersByType[us][pt]++;
                 ei.kingAttacks[us] += popcount(att & theirKingZone);
             }
 
@@ -203,9 +201,12 @@ static int shelter_score(const Position& pos, int us, int ksq) {
         int ourRank = ours ? relative_rank(us, us == WHITE ? lsb(ours) : msb(ours)) : 0;
         int theirRank = theirs ? relative_rank(us, us == WHITE ? lsb(theirs) : msb(theirs)) : 0;
         v += ShelterBonus[ourRank];
-        int storm = StormPenalty[theirRank];
-        if (ourRank && theirRank == ourRank + 1) storm /= 2;   // their pawn is blocked by ours
-        v -= storm;
+        const bool blocked = ourRank && theirRank == ourRank + 1;   // their pawn is stopped by ours
+        v -= blocked ? StormPenalty[theirRank] / 2 : StormPenalty[theirRank];
+#ifdef TUNE
+        Trace.king[us].shelter2[ourRank] += 2;
+        Trace.king[us].shelter2[8 + theirRank] -= blocked ? 1 : 2;
+#endif
     }
     return v;
 }
@@ -224,24 +225,36 @@ static int eval_king(const Position& pos, const EvalInfo& ei, int us) {
     const Bitboard occ = pos.all() ^ pos.pieces(us, QUEEN);
     const Bitboard rookLines = rook_attacks(ksq, occ), bishopLines = bishop_attacks(ksq, occ);
 
-    int danger = ei.kingAttackers[them] * ei.kingAttackWeight[them]
-               + 70 * ei.kingAttacks[them]
-               + 180 * popcount(ei.kingRing[us] & weak)
-               - shelter * 3 / 4
-               + 40;
+    // Attack units: every ingredient of an attack adds to "danger" with its own weight.
+    int x[KD_COUNT];
+    x[KD_ATT_N] = ei.kingAttackers[them] * ei.kingAttackersByType[them][KNIGHT];
+    x[KD_ATT_B] = ei.kingAttackers[them] * ei.kingAttackersByType[them][BISHOP];
+    x[KD_ATT_R] = ei.kingAttackers[them] * ei.kingAttackersByType[them][ROOK];
+    x[KD_ATT_Q] = ei.kingAttackers[them] * ei.kingAttackersByType[them][QUEEN];
+    x[KD_ATTACKS] = ei.kingAttacks[them];
+    x[KD_WEAK] = popcount(ei.kingRing[us] & weak);
     Bitboard rookChecks = rookLines & ei.attackedBy[them][ROOK] & safe;
     Bitboard queenChecks = (rookLines | bishopLines) & ei.attackedBy[them][QUEEN] & safe & ~ei.attackedBy[us][QUEEN] & ~rookChecks;
     Bitboard bishopChecks = bishopLines & ei.attackedBy[them][BISHOP] & safe & ~queenChecks;
     Bitboard knightChecks = KnightAttacks[ksq] & ei.attackedBy[them][KNIGHT] & safe;
-    if (rookChecks) danger += 1000;
-    if (queenChecks) danger += 750;
-    if (bishopChecks) danger += 600;
-    if (knightChecks) danger += 800;
-    if (!pos.pieces(them, QUEEN)) danger -= 850;
+    x[KD_CHECK_R] = rookChecks != 0;
+    x[KD_CHECK_Q] = queenChecks != 0;
+    x[KD_CHECK_B] = bishopChecks != 0;
+    x[KD_CHECK_N] = knightChecks != 0;
+    x[KD_NO_QUEEN] = !pos.pieces(them, QUEEN);
+    x[KD_CONST] = 1;
 
+    int danger = -shelter * 3 / 4;
+    for (int k = 0; k < KD_COUNT; k++) danger += KingDanger[k] * x[k];
+#ifdef TUNE
+    Trace.king[us].active = 1;
+    for (int k = 0; k < KD_COUNT; k++) Trace.king[us].x[k] = (i16)x[k];
+#endif
+
+    // The penalty grows with the square of the danger: one attacker is harmless, three are not.
     if (danger > 100) {
         danger = imin(danger, 2400);
-        score -= S(danger * danger / 6400, danger / 25);
+        score -= S(danger * danger / 6400, danger * KingDangerEg / 256);
     }
     return score;
 }

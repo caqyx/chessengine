@@ -18,8 +18,25 @@ enum {
     F_COUNT
 };
 
+// Ingredients of the king danger score (see eval_king). Each has a weight in KingDanger[].
+enum {
+    KD_ATT_N, KD_ATT_B, KD_ATT_R, KD_ATT_Q,   // (number of attackers) x (attackers of this type)
+    KD_ATTACKS,                               // attacked squares next to the king
+    KD_WEAK,                                  // weak squares in the king ring
+    KD_CHECK_R, KD_CHECK_Q, KD_CHECK_B, KD_CHECK_N,   // a safe checking square exists
+    KD_NO_QUEEN,                              // attacker has no queen
+    KD_CONST,
+    KD_COUNT
+};
+
 #ifdef TUNE
+struct KingTrace {
+    i8 active;          // the danger model was evaluated for this king
+    i16 x[KD_COUNT];
+    i8 shelter2[16];    // twice the use count of ShelterBonus[0..7] then StormPenalty[0..7] (negative)
+};
 struct EvalTrace {
+    KingTrace king[2];
     i16 coeff[F_COUNT];
     int mg, eg;         // final middlegame / endgame score, White minus Black
     int phase, scale;   // 0..24 and 0..64

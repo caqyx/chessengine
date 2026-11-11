@@ -16,6 +16,60 @@ volatile bool SearchStop = false;
 int MoveOverhead = 10;
 int SearchMask = 255;   // 1 check ext, 2 singular, 4 probcut, 8 correction history, 16 razoring, 32 rfp, 64 nmp, 128 lmp/futility
 
+// Search thresholds. Normally compile-time constants; building with -DTUNE_SEARCH turns
+// them into UCI options (SP_<name>) so that variants can be compared in matches.
+#ifdef TUNE_SEARCH
+#define SPARAM(name, value) static int name = value;
+#else
+#define SPARAM(name, value) static const int name = value;
+#endif
+SPARAM(RfpMargin, 70)
+SPARAM(RazorMargin, 260)
+SPARAM(NmpBase, 4)
+SPARAM(NmpDiv, 3)
+SPARAM(FutBase, 90)
+SPARAM(FutMul, 80)
+SPARAM(LmpBase, 3)
+SPARAM(SeeQuiet, 25)
+SPARAM(SeeNoisy, 100)
+SPARAM(HistPrune, 3500)
+SPARAM(LmrBase, 77)
+SPARAM(LmrDiv, 236)
+SPARAM(LmrHist, 6000)
+SPARAM(ProbCutMargin, 180)
+SPARAM(AspDelta, 12)
+SPARAM(QsFutility, 180)
+SPARAM(SingularMul, 2)
+
+static void init_lmr_table();
+
+#ifdef TUNE_SEARCH
+struct SearchParam { const char* name; int* value; };
+static const SearchParam SearchParams[] = {
+    {"RfpMargin", &RfpMargin},
+    {"RazorMargin", &RazorMargin},
+    {"NmpBase", &NmpBase},
+    {"NmpDiv", &NmpDiv},
+    {"FutBase", &FutBase},
+    {"FutMul", &FutMul},
+    {"LmpBase", &LmpBase},
+    {"SeeQuiet", &SeeQuiet},
+    {"SeeNoisy", &SeeNoisy},
+    {"HistPrune", &HistPrune},
+    {"LmrBase", &LmrBase},
+    {"LmrDiv", &LmrDiv},
+    {"LmrHist", &LmrHist},
+    {"ProbCutMargin", &ProbCutMargin},
+    {"AspDelta", &AspDelta},
+    {"QsFutility", &QsFutility},
+    {"SingularMul", &SingularMul},
+};
+int search_param_count() { return (int)(sizeof(SearchParams) / sizeof(SearchParams[0])); }
+const char* search_param_name(int i) { return SearchParams[i].name; }
+int search_param_value(int i) { return *SearchParams[i].value; }
+void search_param_set(int i, int value) { *SearchParams[i].value = value; init_lmr_table(); }
+#endif
+
 typedef i16 PieceToHist[12][64];
 
 struct Stack {
@@ -56,10 +110,14 @@ static double ln_approx(double x) {
     return 2.0 * sum + k * 0.6931471805599453;
 }
 
-void search_init() {
+static void init_lmr_table() {
     for (int d = 0; d < 64; d++)
         for (int m = 0; m < 64; m++)
-            LmrTable[d][m] = (d && m) ? (int)(0.77 + ln_approx(d) * ln_approx(m) / 2.36) : 0;
+            LmrTable[d][m] = (d && m) ? (int)(LmrBase / 100.0 + ln_approx(d) * ln_approx(m) / (LmrDiv / 100.0)) : 0;
+}
+
+void search_init() {
+    init_lmr_table();
     search_clear();
 }
 
@@ -283,7 +341,7 @@ static int qsearch(Position& pos, Stack* ss, int alpha, int beta) {
             return best;
         }
         if (best > alpha) alpha = best;
-        futilityBase = staticEval + 180;
+        futilityBase = staticEval + QsFutility;
     }
 
     if (ttMove && (!pos.pseudo_legal(ttMove) || (!inCheck && !is_noisy(ttMove)))) ttMove = MOVE_NONE;
@@ -396,11 +454,11 @@ static int search(Position& pos, Stack* ss, int alpha, int beta, int depth, bool
 
     if (!pvNode && !inCheck && !excluded) {
         // Reverse futility pruning: we are so far above beta that a shallow search will not drop below it.
-        if ((SearchMask & 32) && depth <= 8 && eval - 70 * (depth - improving) >= beta && eval < VALUE_MATE_IN_MAX && beta > -VALUE_MATE_IN_MAX)
+        if ((SearchMask & 32) && depth <= 8 && eval - RfpMargin * (depth - improving) >= beta && eval < VALUE_MATE_IN_MAX && beta > -VALUE_MATE_IN_MAX)
             return (eval + beta) / 2;
 
         // Razoring: hopeless at low depth, verify with quiescence only.
-        if ((SearchMask & 16) && depth <= 3 && eval + 260 * depth <= alpha) {
+        if ((SearchMask & 16) && depth <= 3 && eval + RazorMargin * depth <= alpha) {
             int v = qsearch(pos, ss, alpha, alpha + 1);
             if (v <= alpha) return v;
         }
@@ -409,7 +467,7 @@ static int search(Position& pos, Stack* ss, int alpha, int beta, int depth, bool
         if ((SearchMask & 64) && depth >= 3 && (ss - 1)->currentMove != MOVE_NULL && eval >= beta
             && staticEval >= beta - 20 * depth + 180 && pos.st->npm[us] > 0
             && beta > -VALUE_MATE_IN_MAX && ss->ply >= NmpMinPly) {
-            int R = 4 + depth / 3 + imin((eval - beta) / 200, 3);
+            int R = NmpBase + depth / NmpDiv + imin((eval - beta) / 200, 3);
             ss->currentMove = MOVE_NULL;
             ss->ch = &ContHist[12][0];
             pos.make_null();
@@ -429,7 +487,7 @@ static int search(Position& pos, Stack* ss, int alpha, int beta, int depth, bool
         }
 
         // ProbCut: a good capture that beats beta by a margin at reduced depth is very likely a cutoff.
-        const int probBeta = beta + 180 - 50 * improving;
+        const int probBeta = beta + ProbCutMargin - 50 * improving;
         if ((SearchMask & 4) && depth >= 5 && iabs(beta) < VALUE_MATE_IN_MAX
             && !(ttScore != VALUE_NONE && ttDepth >= depth - 3 && ttScore < probBeta)) {
             MovePicker mp(pos, ss, (ttMove && is_noisy(ttMove)) ? ttMove : (Move)MOVE_NONE, true);
@@ -475,11 +533,11 @@ static int search(Position& pos, Stack* ss, int alpha, int beta, int depth, bool
         if ((SearchMask & 128) && !root && best > -VALUE_MATE_IN_MAX && pos.st->npm[us] > 0) {
             int lmrDepth = imax(0, depth - 1 - lmrBase);
             if (quiet) {
-                if (moveCount >= (3 + depth * depth) / (2 - improving)) { skipQuiets = true; continue; }
-                if (!inCheck && !givesCheck && lmrDepth <= 8 && staticEval + 90 + 80 * lmrDepth <= alpha) continue;
-                if (lmrDepth <= 4 && hist < -3500 * depth) continue;
-                if (!pos.see_ge(m, -25 * lmrDepth * lmrDepth)) continue;
-            } else if (depth <= 8 && !pos.see_ge(m, -100 * depth)) continue;
+                if (moveCount >= (LmpBase + depth * depth) / (2 - improving)) { skipQuiets = true; continue; }
+                if (!inCheck && !givesCheck && lmrDepth <= 8 && staticEval + FutBase + FutMul * lmrDepth <= alpha) continue;
+                if (lmrDepth <= 4 && hist < -HistPrune * depth) continue;
+                if (!pos.see_ge(m, -SeeQuiet * lmrDepth * lmrDepth)) continue;
+            } else if (depth <= 8 && !pos.see_ge(m, -SeeNoisy * depth)) continue;
         }
 
         // Extensions
@@ -487,7 +545,7 @@ static int search(Position& pos, Stack* ss, int alpha, int beta, int depth, bool
         if ((SearchMask & 2) && !root && depth >= 8 && m == ttMove && !excluded && ttDepth >= depth - 3 && (ttBound & BOUND_LOWER)
             && iabs(ttScore) < VALUE_MATE_IN_MAX && ss->ply < 2 * RootDepth) {
             // Singular extension: is the hash move the only good move here?
-            const int sBeta = ttScore - 2 * depth;
+            const int sBeta = ttScore - SingularMul * depth;
             ss->excluded = m;
             int v = search(pos, ss, sBeta - 1, sBeta, (depth - 1) / 2, cutNode);
             ss->excluded = MOVE_NONE;
@@ -523,7 +581,7 @@ static int search(Position& pos, Stack* ss, int alpha, int beta, int depth, bool
                 r += ttNoisy;
                 r -= pvNode;
                 r -= (m == mp.k1 || m == mp.k2 || m == mp.counter);
-                r -= iclamp(hist / 6000, -2, 2);
+                r -= iclamp(hist / LmrHist, -2, 2);
             } else {
                 r = r / 2 + cutNode;
             }
@@ -661,7 +719,7 @@ SearchResult search_go(Position& pos, const Limits& lim, bool printInfo) {
     Move prevBest = MOVE_NONE;
     for (RootDepth = 1; RootDepth <= maxDepth; RootDepth++) {
         SelDepth = 0;
-        int alpha = -VALUE_INF, beta = VALUE_INF, delta = 12, reduce = 0;
+        int alpha = -VALUE_INF, beta = VALUE_INF, delta = AspDelta, reduce = 0;
         if (RootDepth >= 5) { alpha = imax(score - delta, -VALUE_INF); beta = imin(score + delta, (int)VALUE_INF); }
         int v;
         for (;;) {
