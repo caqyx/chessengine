@@ -2,7 +2,8 @@
  * stub-engine-worker.js - stand-in for engine/web/engine-worker.js.
  *
  * A classic Web Worker that speaks the same UCI subset (docs/engine-protocol.md) but plays a
- * random legal move after a short delay, with a few made-up `info` lines on the way.
+ * random legal move after a short delay, with a few made-up `info` lines on the way (the score
+ * is the material balance, and the `wdl` chances are derived from that score).
  * The game falls back to it when the real engine cannot be loaded.
  *
  * The rules come from game/js/chess.js, loaded with a dynamic import (allowed in classic
@@ -98,6 +99,14 @@ function materialScore(game) {
   return score;
 }
 
+/** Made-up win / draw / loss chances (per-mille, side to move) for a centipawn score. */
+function wdlForScore(score) {
+  const chance = (value) => Math.round(1000 / (1 + Math.exp((60 - value) / 120)));
+  const win = chance(score);
+  const loss = Math.min(chance(-score), 1000 - win);
+  return `${win} ${1000 - win - loss} ${loss}`;
+}
+
 function pickRandom(list) {
   return list[Math.floor(Math.random() * list.length)];
 }
@@ -116,7 +125,8 @@ function startSearch(args) {
   game.move(best.uci);
   const replies = game.moves();
   const reply = replies.length ? pickRandom(replies) : null;
-  const scoreText = best.san.endsWith('#') ? 'mate 1' : `cp ${baseScore + Math.round(Math.random() * 40 - 20)}`;
+  const score = baseScore + Math.round(Math.random() * 40 - 20);
+  const scoreText = best.san.endsWith('#') ? 'mate 1 wdl 1000 0 0' : `cp ${score} wdl ${wdlForScore(score)}`;
   const pv = reply ? `${best.uci} ${reply.uci}` : best.uci;
 
   const total = thinkTime(args);

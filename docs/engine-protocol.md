@@ -24,7 +24,8 @@ game/js/engine-client.js  --postMessage(string)-->  engine/web/engine-worker.js 
 | `isready` | `readyok` |
 | `ucinewgame` | nothing (clears hash and history) |
 | `setoption name Hash value <MB>` | nothing. 1..4096, web default 32 (the game uses 32) |
-| `setoption name Level value <1..10>` | nothing. 10 = full strength (default). 1 = beginner |
+| `setoption name Level value <1..10>` | nothing. 10 = full strength (default). 1 = beginner. Changing the level clears the hash |
+| `setoption name UCI_ShowWDL value true\|false` | nothing. Web default true: adds win/draw/loss chances to `info` lines |
 | `setoption name Opening Variety value true\|false` | nothing. Web default true: a little evaluation noise in the first 4 moves at Level 10 so games do not all open the same way |
 | `position startpos [moves e2e4 e7e5 ...]` | nothing |
 | `position fen <fen> [moves ...]` | nothing |
@@ -39,12 +40,13 @@ Moves are long algebraic: `e2e4`, `e7e8q`, castling as king move `e1g1`.
 ## Output while searching
 
 ```
-info depth 12 seldepth 19 score cp 34 nodes 412345 nps 980000 hashfull 120 time 420 pv e2e4 e7e5 g1f3
+info depth 12 seldepth 19 score cp 34 wdl 412 236 352 nodes 412345 nps 980000 hashfull 120 time 420 pv e2e4 e7e5 g1f3
 info depth 18 seldepth 30 score mate 4 nodes ... pv ...
 bestmove e2e4 ponder e7e5
 ```
 
 - `score cp X` is centipawns from the **side to move** point of view.
+- `wdl W D L` right after the score: chances of win, draw and loss in per-mille for the side to move, always adding up to 1000. Fitted to Tessera's own self-play results (`tools/fit_wdl.py`). Tolerate its absence.
 - `score mate N` is mate in N moves (negative: side to move gets mated).
 - `bestmove 0000` when the position has no legal move.
 - `ponder` part is optional.
@@ -82,6 +84,7 @@ them.
 - engine move, no clock: `setoption name Level value N`, `position ...`, `go movetime T` (T grows with the level, 2000 ms at level 10)
 - engine move, with clock: `go wtime .. btime .. winc .. binc ..`
 - analysis: Level 10, `go movetime 3000`; hint: `go movetime 1200`
+- win-chance probe (setting "Win chance"): a second worker with `Hash 8`, `Opening Variety false`, Level 10, then `position ...`, `go movetime 500` on the human's turn; only the `wdl` values are used and its `bestmove` is discarded. The playing engine's worker is never used for probes.
 
 At low levels the engine answers in a few milliseconds, so the game holds the
 reply back until at least 300 ms have passed.

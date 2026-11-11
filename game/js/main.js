@@ -12,6 +12,7 @@ import { createImportDialog, createMenuDialog, createNewGameDialog, isAnyDialogO
 import { ENGINE_WORKER_URL, EngineClient, STUB_WORKER_URL } from './engine-client.js';
 
 const TOAST_MS = 2200;
+const PROBE_HASH_MB = 8;
 
 function byId(id) {
   return document.getElementById(id);
@@ -133,6 +134,10 @@ function createMenuActions(controller, dialogs, toast) {
       controller.toggleLegalMoves();
       dialogs.menu.reflect(controller.menuState());
     },
+    'toggle-winchance': () => {
+      controller.toggleWinChance();
+      dialogs.menu.reflect(controller.menuState());
+    },
     'toggle-theme': () => {
       controller.toggleTheme();
       dialogs.menu.reflect(controller.menuState());
@@ -148,12 +153,21 @@ function start() {
     workerUrl: engineWorkerUrl(),
     onFallback: (reason) => controller?.engineFellBack(reason),
   });
+  // Win-chance probes get a worker of their own (started with the first probe). A small hash
+  // is plenty for half a second, and without the opening noise the same position gives the
+  // same numbers. No fallback: without the real engine there is simply no estimate.
+  const probeEngine = new EngineClient({
+    workerUrl: engineWorkerUrl(),
+    stubUrl: null,
+    hashMb: PROBE_HASH_MB,
+    engineOptions: { 'Opening Variety': false },
+  });
   const views = {
     board: createBoardView(byId('board')),
     moves: createMoveListView(byId('moves'), { onSelect: (ply) => controller.goTo(ply) }),
     panel: createPanelView(),
   };
-  controller = createController({ views, engine, toast, applyTheme });
+  controller = createController({ views, engine, probeEngine, toast, applyTheme });
 
   const dialogs = {};
   const menuActions = createMenuActions(controller, dialogs, toast);

@@ -13,6 +13,8 @@ export const DEFAULT_SETTINGS = {
   theme: 'auto',
   flipped: false,
   showLegalMoves: true,
+  /** The win-chance indicator under the status line. */
+  winChance: true,
   /** Options last used in the New game dialog. */
   newGame: null,
 };
@@ -41,6 +43,7 @@ export function loadSettings() {
   if (!['auto', 'light', 'dark'].includes(settings.theme)) settings.theme = 'auto';
   settings.flipped = settings.flipped === true;
   settings.showLegalMoves = settings.showLegalMoves !== false;
+  settings.winChance = settings.winChance !== false;
   return settings;
 }
 

@@ -189,6 +189,79 @@
   font-size: 14px;
 }
 
+/* -- win chance: one bar in three segments (White | draw | Black) and the same numbers as
+      text, so nothing depends on telling the tones apart ---------------------------------- */
+
+.winchance {
+  padding: 0 var(--pad) 8px;
+}
+
+.winchance-bar {
+  display: flex;
+  height: 10px;
+  border: 1px solid var(--rule);
+  overflow: hidden;
+  transition: opacity 200ms ease;
+}
+
+.winchance-bar span {
+  flex: none;
+  transition: width 200ms ease;
+}
+
+.winchance-white {
+  width: var(--white, 0%);
+  background: var(--eval-white);
+}
+
+.winchance-draw {
+  width: var(--draw, 0%);
+  background: var(--ink-muted);
+  opacity: 0.45;
+}
+
+/* Black takes what is left, so rounding never leaves a gap at the end of the bar. */
+.winchance-bar .winchance-black {
+  flex: 1 1 0;
+  background: var(--eval-black);
+}
+
+.winchance-text {
+  margin-top: 4px;
+  overflow: hidden;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 200ms ease;
+}
+
+/* No estimate yet: an empty bar and dashes instead of numbers. */
+.winchance.is-empty .winchance-bar {
+  background: var(--wash);
+}
+
+.winchance.is-empty .winchance-bar span {
+  display: none;
+}
+
+.winchance.is-empty .winchance-text {
+  color: var(--ink-muted);
+}
+
+/* The value of the previous position while the next one is on its way. The short delay keeps
+   the bar from blinking when the new value arrives almost at once. */
+.winchance.is-stale .winchance-bar {
+  opacity: 0.55;
+  transition-delay: 300ms;
+}
+
+.winchance.is-stale .winchance-text {
+  color: var(--ink-muted);
+  transition-delay: 300ms;
+}
+
 /* -- move list (phone: one strip that scrolls sideways) --------------------------------- */
 
 .moves {
@@ -353,7 +426,13 @@
 
 @media (min-width: 520px) {
   .app {
-    max-width: max(420px, min(100%, calc(100dvh - 404px)));
+    /* everything in the column that is not the board; the win-chance indicator adds its height */
+    --chrome: 404px;
+    max-width: max(420px, min(100%, calc(100dvh - var(--chrome))));
+  }
+
+  .app.has-winchance {
+    --chrome: 442px;
   }
 }
 
@@ -383,10 +462,11 @@
     );
     display: grid;
     grid-template-columns: var(--board) var(--panel);
-    grid-template-rows: var(--bar) auto minmax(0, 1fr) auto auto auto var(--bar);
+    grid-template-rows: var(--bar) auto auto minmax(0, 1fr) auto auto auto var(--bar);
     grid-template-areas:
       'top     head'
       'board   status'
+      'board   winchance'
       'board   moves'
       'board   nav'
       'board   actions'
@@ -475,6 +555,11 @@
 
   .status.is-over .status-line {
     padding: 8px 14px;
+  }
+
+  .winchance {
+    grid-area: winchance;
+    padding: 0 0 14px;
   }
 
   .moves {
@@ -597,6 +682,22 @@
 
   .status.is-over .status-line {
     padding: 5px 10px;
+  }
+
+  .winchance {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 6px;
+  }
+
+  .winchance-bar {
+    flex: 1 1 0;
+  }
+
+  .winchance-text {
+    flex: none;
+    margin-top: 0;
   }
 
   .nav {

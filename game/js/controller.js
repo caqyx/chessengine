@@ -9,6 +9,11 @@
  * current state (play a move, analyse the shown position, find a hint, or nothing), and
  * restarts it only when that task changed. Tasks are identified by a key that contains the
  * position, so "the position changed" and "the task changed" are the same test.
+ *
+ * The win-chance indicator needs numbers when that engine has nothing to do (a person is
+ * thinking). Those "probe" searches run in a second worker of their own (probeEngine): they
+ * share no hash table, level or queue with the engine that plays, so a probe can neither
+ * delay nor strengthen the engine's move, and its bestmove has no way onto the board.
  */
 
 import {
@@ -41,11 +46,27 @@ import {
   viewedPly,
 } from './state.js';
 import { createClock, formatClock } from './clock.js';
-import { formatScore, moveTimeForLevel, pvToSan, scoreForWhite, terminalScore, uciToArrow, whiteShare } from './analysis.js';
+import {
+  chancesForWhite,
+  chancesOfOutcome,
+  formatChances,
+  formatScore,
+  moveTimeForLevel,
+  pvToSan,
+  scoreForWhite,
+  terminalScore,
+  uciToArrow,
+  whiteShare,
+} from './analysis.js';
 import { loadSavedGame, loadSettings, saveGame, saveSettings } from './storage.js';
 
 const ANALYSIS_MS = 3000;
 const HINT_MS = 1200;
+/** Win-chance probe: a short full-strength search, started once the position has settled. */
+const PROBE_MS = 500;
+const PROBE_DEBOUNCE_MS = 250;
+/** Only full strength gives trustworthy chances; lower levels search shallowly with noise. */
+const FULL_LEVEL = 10;
 const RESIGN_CONFIRM_MS = 3000;
 const LOW_TIME_MS = 10_000;
 /** The engine answers within a millisecond on low levels; its move is shown no sooner than this. */
@@ -66,10 +87,11 @@ function delay(ms) {
  * @param {Object} deps
  * @param {{board: object, moves: object, panel: object}} deps.views
  * @param {import('./engine-client.js').EngineClient} deps.engine
+ * @param {import('./engine-client.js').EngineClient} deps.probeEngine  for win-chance probes only
  * @param {(message: string) => void} deps.toast
  * @param {(theme: 'auto'|'light'|'dark') => boolean} deps.applyTheme  returns true when dark is shown
  */
-export function createController({ views, engine, toast, applyTheme }) {
+export function createController({ views, engine, probeEngine, toast, applyTheme }) {
   const settings = loadSettings();
   const clock = createClock({ onTick: renderClocks, onFlag: handleFlag });
 
@@ -85,6 +107,16 @@ export function createController({ views, engine, toast, applyTheme }) {
   /** A delivered hint: { key, arrow }. */
   let hint = null;
   let hintWanted = false;
+  /** The probe that is waiting, running or finished for the live position: { key }. */
+  let probe = { key: null };
+  let probeTimer = null;
+  /**
+   * Win chances seen from White, remembered per ply (index = ply) for as long as the game is
+   * on the page: { fen, depth, white, draw, black }, the chances in per-mille.
+   */
+  let chances = [];
+  /** The latest chances of a live position; shown dimmed until the next ones arrive. */
+  let lastChances = null;
   let resignArmed = false;
   let resignTimer = null;
   let engineNotice = '';
@@ -106,6 +138,11 @@ export function createController({ views, engine, toast, applyTheme }) {
 
   function syncEngine() {
     const wanted = desiredTask();
+    syncTask(wanted);
+    syncProbe(wanted);
+  }
+
+  function syncTask(wanted) {
     const key = wanted ? wanted.key : null;
     if (key === task.key) return;
     engine.cancel();
@@ -113,6 +150,64 @@ export function createController({ views, engine, toast, applyTheme }) {
     if (wanted?.kind === 'move') searchEngineMove(key);
     else if (wanted?.kind === 'analysis') searchAnalysis(key);
     else if (wanted?.kind === 'hint') searchHint(key);
+  }
+
+  /**
+   * A probe of the live position is wanted while the indicator is on, the game is running and
+   * the engine has no task: a task either supplies the chances itself (analysis, hint, the
+   * engine's move at full strength) or is the engine's move, which nothing may compete with.
+   */
+  function desiredProbeKey(wanted) {
+    if (!settings.winChance || wanted || outcome(game)) return null;
+    return `probe:${positionKey(livePly(game))}`;
+  }
+
+  /** Starts the probe a moment after the position changed, so a run of quick moves costs one search. */
+  function syncProbe(wanted) {
+    const key = desiredProbeKey(wanted);
+    if (key === probe.key) return;
+    probeEngine.cancel();
+    clearTimeout(probeTimer);
+    probe = { key };
+    if (key) probeTimer = setTimeout(() => searchProbe(key), PROBE_DEBOUNCE_MS);
+  }
+
+  /** Only the info lines are used; the bestmove of a probe is dropped on purpose. */
+  function searchProbe(key) {
+    if (probe.key !== key) return;
+    const ply = livePly(game);
+    const request = { ...searchFrom(ply), movetime: PROBE_MS, level: FULL_LEVEL };
+    probeEngine.search(request, (info) => {
+      if (probe.key === key) rememberChances(ply, info);
+    });
+  }
+
+  // -- win chances ------------------------------------------------------------------
+
+  /** The chances remembered for the position after `ply` moves, or null. */
+  function knownChances(ply) {
+    const known = chances[ply];
+    return known && known.fen === fenAtPly(game, ply) ? known : null;
+  }
+
+  /**
+   * Stores the chances of an info line for `ply`. A shallower estimate never replaces a deeper
+   * one of the same position (a probe that runs again starts at depth 1).
+   */
+  function rememberChances(ply, info) {
+    if (!info.wdl) return;
+    const depth = info.depth ?? 0;
+    const known = knownChances(ply);
+    if (known && known.depth > depth) return;
+    const fen = fenAtPly(game, ply);
+    chances[ply] = { fen, depth, ...chancesForWhite(info.wdl, fen.split(' ')[1] === 'b' ? 'b' : 'w') };
+    if (ply === livePly(game)) lastChances = chances[ply];
+    queueRender();
+  }
+
+  /** The same for a search of the playing engine; the random mover's numbers mean nothing. */
+  function rememberEngineChances(ply, info) {
+    if (!engine.usingStub) rememberChances(ply, info);
   }
 
   function searchFrom(ply) {
@@ -139,10 +234,14 @@ export function createController({ views, engine, toast, applyTheme }) {
 
   function searchEngineMove(key) {
     const timing = moveTiming();
-    const request = { ...searchFrom(livePly(game)), level: game.level, ...timing };
+    const ply = livePly(game);
+    const request = { ...searchFrom(ply), level: game.level, ...timing };
     const waited = delay(minimumThinkMs(timing));
+    const onInfo = (info) => {
+      if (task.key === key) rememberEngineChances(ply, info);
+    };
     engine
-      .search(request)
+      .search(request, game.level === FULL_LEVEL ? onInfo : undefined)
       .then((result) => waited.then(() => result))
       .then((result) => {
         if (!result || task.key !== key) return;
@@ -168,9 +267,12 @@ export function createController({ views, engine, toast, applyTheme }) {
       analysis.terminal = terminalScore(chess);
       return;
     }
-    const request = { ...searchFrom(viewedPly(game)), movetime: ANALYSIS_MS, level: 10 };
+    const ply = viewedPly(game);
+    const request = { ...searchFrom(ply), movetime: ANALYSIS_MS, level: FULL_LEVEL };
     const onInfo = (info) => {
-      if (task.key !== key || !info.score || !info.pv?.length) return;
+      if (task.key !== key) return;
+      rememberEngineChances(ply, info);
+      if (!info.score || !info.pv?.length) return;
       analysis.info = info;
       queueRender();
     };
@@ -178,8 +280,12 @@ export function createController({ views, engine, toast, applyTheme }) {
   }
 
   function searchHint(key) {
-    const request = { ...searchFrom(livePly(game)), movetime: HINT_MS, level: 10 };
-    engine.search(request).then((result) => {
+    const ply = livePly(game);
+    const request = { ...searchFrom(ply), movetime: HINT_MS, level: FULL_LEVEL };
+    const onInfo = (info) => {
+      if (task.key === key) rememberEngineChances(ply, info);
+    };
+    engine.search(request, onInfo).then((result) => {
       if (!result || task.key !== key) return;
       const arrow = uciToArrow(result.bestmove);
       hint = arrow ? { key, arrow } : null;
@@ -389,6 +495,23 @@ export function createController({ views, engine, toast, applyTheme }) {
     return model;
   }
 
+  /**
+   * What the win-chance indicator shows: the result once the game is over, the remembered
+   * chances of the position on the board, or (live only) the previous ones marked as stale.
+   */
+  function shownChances(over) {
+    if (!isLive(game)) return { chances: knownChances(viewedPly(game)), stale: false };
+    if (over) return { chances: chancesOfOutcome(over), stale: false };
+    const live = knownChances(livePly(game));
+    return { chances: live ?? lastChances, stale: !live && lastChances !== null };
+  }
+
+  function winChanceModel(over) {
+    if (!settings.winChance) return { visible: false, chances: null, text: '', stale: false };
+    const shown = shownChances(over);
+    return { visible: true, chances: shown.chances, text: formatChances(shown.chances), stale: shown.stale };
+  }
+
   function moveListModel(ply) {
     const first = firstMoveInfo(game);
     return {
@@ -410,6 +533,7 @@ export function createController({ views, engine, toast, applyTheme }) {
       status: { line: over ? outcomeText(over) : turnText(), over: Boolean(over), review: reviewText() },
       controls: controlsModel(ply),
       analysis: analysisModel(),
+      winChance: winChanceModel(over),
       notice: engineNotice,
     });
     // Last: the list scrolls its current move into view, and the panel above can change its height.
@@ -470,6 +594,8 @@ export function createController({ views, engine, toast, applyTheme }) {
 
   function replaceGame(next) {
     engine.cancel();
+    probeEngine.cancel();
+    clearTimeout(probeTimer);
     views.board.cancelPromotion();
     game = next;
     gameSerial++;
@@ -477,11 +603,15 @@ export function createController({ views, engine, toast, applyTheme }) {
     analysis = null;
     lastShare = 0.5;
     task = { key: null };
+    probe = { key: null };
+    chances = [];
+    lastChances = null;
     forgetHint();
     disarmResign();
     if (engineNotice !== NOTICE_STUB && engineNotice !== NOTICE_NO_ENGINE) engineNotice = '';
     engine.newGame();
     engine.setLevel(game.level);
+    probeEngine.newGame();
     syncClockToGame();
     commit();
   }
@@ -659,6 +789,13 @@ export function createController({ views, engine, toast, applyTheme }) {
       render();
     },
 
+    /** Switching the indicator off also stops the probe searches behind it. */
+    toggleWinChance() {
+      settings.winChance = !settings.winChance;
+      saveSettings(settings);
+      commit();
+    },
+
     toggleTheme() {
       settings.theme = darkTheme ? 'light' : 'dark';
       saveSettings(settings);
@@ -671,7 +808,7 @@ export function createController({ views, engine, toast, applyTheme }) {
     },
 
     menuState() {
-      return { showLegalMoves: settings.showLegalMoves, darkTheme };
+      return { showLegalMoves: settings.showLegalMoves, winChance: settings.winChance, darkTheme };
     },
 
     /** The engine client switched to the stub (or found no engine at all). */

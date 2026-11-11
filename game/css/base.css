@@ -426,6 +426,13 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+.menu-help {
+  margin-top: -6px;
+  padding: 0 4px 12px;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
 .menu-item[aria-checked='true'] .menu-state {
   color: var(--ink);
   font-weight: 600;

@@ -1,7 +1,7 @@
 /**
  * panel-view.js - everything around the board that is not the move list: the two player bars
- * (name, captured pieces, clock), the status headline, the control buttons, the eval bar and
- * the analysis line. Pure rendering: it shows the model it is given.
+ * (name, captured pieces, clock), the status headline, the win-chance indicator, the control
+ * buttons, the eval bar and the analysis line. Pure rendering: it shows the model it is given.
  */
 
 import { pieceSvg } from './pieces.js';
@@ -68,6 +68,10 @@ export function createPanelView() {
   const analysisDepth = byId('analysis-depth');
   const analysisLine = byId('analysis-line');
   const notice = byId('notice');
+  const app = byId('app');
+  const winChance = byId('winchance');
+  const winChanceBar = byId('winchance-bar');
+  const winChanceText = byId('winchance-text');
 
   function renderClock(bar, clock) {
     bar.clock.hidden = !clock;
@@ -125,6 +129,23 @@ export function createPanelView() {
     setText(analysisLine, model.line);
   }
 
+  /** Segment widths follow the exact chances; the text (and the label) carry the rounded ones. */
+  function renderWinChance(model) {
+    app.classList.toggle('has-winchance', model.visible);
+    winChance.hidden = !model.visible;
+    if (!model.visible) return;
+    winChance.classList.toggle('is-empty', !model.chances);
+    winChance.classList.toggle('is-stale', model.stale);
+    if (model.chances) {
+      const { white, draw, black } = model.chances;
+      const total = white + draw + black;
+      winChanceBar.style.setProperty('--white', `${((white * 100) / total).toFixed(1)}%`);
+      winChanceBar.style.setProperty('--draw', `${((draw * 100) / total).toFixed(1)}%`);
+    }
+    setText(winChanceText, model.text);
+    if (winChanceBar.getAttribute('aria-label') !== model.text) winChanceBar.setAttribute('aria-label', model.text);
+  }
+
   function renderNotice(text) {
     notice.hidden = !text;
     setText(notice, text);
@@ -139,6 +160,7 @@ export function createPanelView() {
      *   controls { canBack, canForward, canUndo, canHint, hintBusy, canResign, resignArmed,
      *              analysisOn, analysisLocked }
      *   analysis { visible, share, score, depth, line, flipped }
+     *   winChance { visible, chances: { white, draw, black } | null, text, stale }
      *   notice   string
      */
     render(model) {
@@ -147,6 +169,7 @@ export function createPanelView() {
       renderStatus(model.status);
       renderControls(model.controls);
       renderAnalysis(model.analysis);
+      renderWinChance(model.winChance);
       renderNotice(model.notice);
     },
 

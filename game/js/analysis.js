@@ -2,7 +2,7 @@
  * analysis.js - turning engine output into things the UI can show.
  *
  * The engine reports scores from the side to move point of view; everything here is converted
- * to White's point of view first.
+ * to White's point of view first. The same goes for the win / draw / loss chances.
  */
 
 import { Chess } from './chess.js';
@@ -50,6 +50,53 @@ export function formatScore(whiteScore) {
   if (Math.abs(pawns) < 0.05) return '0.0';
   const digits = Math.abs(pawns) >= 10 ? 0 : 1;
   return `${pawns > 0 ? '+' : '-'}${Math.abs(pawns).toFixed(digits)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Win chances
+// ---------------------------------------------------------------------------
+
+/**
+ * @param {{win: number, draw: number, loss: number}} wdl  per-mille, from the side to move
+ * @param {'w'|'b'} turn  side to move in the searched position
+ * @returns {{white: number, draw: number, black: number}} the same chances seen from White
+ */
+export function chancesForWhite(wdl, turn) {
+  return turn === 'w'
+    ? { white: wdl.win, draw: wdl.draw, black: wdl.loss }
+    : { white: wdl.loss, draw: wdl.draw, black: wdl.win };
+}
+
+/** A finished game as chances: everything for the winner, or everything for the draw. */
+export function chancesOfOutcome(over) {
+  return { white: over.winner === 'w' ? 1000 : 0, draw: over.winner ? 0 : 1000, black: over.winner === 'b' ? 1000 : 0 };
+}
+
+/**
+ * Whole percentages that add up to exactly 100: each share is rounded down and the points
+ * that are left go to the shares that lost the most by it.
+ * @param {{white: number, draw: number, black: number}} chances  any non-negative weights
+ * @returns {{white: number, draw: number, black: number}}
+ */
+export function chancePercents(chances) {
+  const names = ['white', 'draw', 'black'];
+  const total = names.reduce((sum, name) => sum + chances[name], 0);
+  const percents = {};
+  for (const name of names) percents[name] = Math.floor((chances[name] * 100) / total);
+  const lost = (name) => (chances[name] * 100) / total - percents[name];
+  let left = 100 - names.reduce((sum, name) => sum + percents[name], 0);
+  for (const name of [...names].sort((a, b) => lost(b) - lost(a))) {
+    if (left-- <= 0) break;
+    percents[name]++;
+  }
+  return percents;
+}
+
+/** "White 41% · Draw 23% · Black 36%", with dashes while there is no estimate. */
+export function formatChances(chances) {
+  const percents = chances ? chancePercents(chances) : null;
+  const part = (label, name) => `${label} ${percents ? `${percents[name]}%` : '\u2013'}`;
+  return [part('White', 'white'), part('Draw', 'draw'), part('Black', 'black')].join(' \u00b7 ');
 }
 
 /**

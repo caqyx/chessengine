@@ -52,6 +52,15 @@
       </div>
     </div>
 
+    <div class="winchance" id="winchance" hidden>
+      <div class="winchance-bar" id="winchance-bar" role="img" aria-label="White – · Draw – · Black –">
+        <span class="winchance-white"></span>
+        <span class="winchance-draw"></span>
+        <span class="winchance-black"></span>
+      </div>
+      <p class="winchance-text" id="winchance-text" aria-hidden="true"></p>
+    </div>
+
     <ol class="moves" id="moves" aria-label="Moves"></ol>
 
     <nav class="nav" aria-label="Move navigation">
@@ -146,6 +155,10 @@
       <li><button type="button" class="menu-item" data-action="download-pgn">Download game (PGN)</button></li>
       <li><button type="button" class="menu-item" data-action="load-pgn">Load game (PGN)</button></li>
       <li><button type="button" class="menu-item" data-action="toggle-legal" role="switch" aria-checked="true">Show legal moves <span class="menu-state"></span></button></li>
+      <li>
+        <button type="button" class="menu-item" data-action="toggle-winchance" role="switch" aria-checked="true" aria-describedby="help-winchance">Win chance <span class="menu-state"></span></button>
+        <p class="menu-help" id="help-winchance">Estimated from Tessera's own self-play games.</p>
+      </li>
       <li><button type="button" class="menu-item" data-action="toggle-theme" role="switch" aria-checked="false">Dark theme <span class="menu-state"></span></button></li>
     </ul>
     <div class="sheet-actions">

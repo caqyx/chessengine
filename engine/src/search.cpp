@@ -12,7 +12,12 @@
 #define OPENING_VARIETY_DEFAULT false
 #endif
 
+#ifndef SHOW_WDL_DEFAULT
+#define SHOW_WDL_DEFAULT false
+#endif
+
 volatile bool SearchStop = false;
+bool ShowWdl = SHOW_WDL_DEFAULT;
 int MoveOverhead = 10;
 int SearchMask = 255;   // 1 check ext, 2 singular, 4 probcut, 8 correction history, 16 razoring, 32 rfp, 64 nmp, 128 lmp/futility
 
@@ -131,12 +136,14 @@ void search_clear() {
     __builtin_memset(PawnCorr, 0, sizeof(PawnCorr));
 }
 
-void search_set_level(int level) {
+bool search_set_level(int level) {
     static const int Depths[11] = {0, 1, 2, 3, 4, 5, 6, 8, 10, 13, 0};
     static const int Noise[11] = {0, 260, 200, 150, 110, 80, 55, 35, 20, 8, 0};
+    const int before = Level;
     Level = iclamp(level, 1, 10);
     LevelDepth = Depths[Level];
     LevelNoise = Noise[Level];
+    return Level != before;
 }
 
 // ---- helpers --------------------------------------------------------------
@@ -643,6 +650,30 @@ static int search(Position& pos, Stack* ss, int alpha, int beta, int depth, bool
 }
 
 // ---- iterative deepening driver --------------------------------------------
+// Win / draw / loss chances for a score, fitted to how Tessera's own self-play games
+// ended (tools/fit_wdl.py). "a" is the score at which a win becomes a coin flip and "b"
+// how gradual the change is; both depend on how much material is left.
+static const double WdlA0 = 280.9, WdlA1 = -206.9, WdlB0 = 122.8, WdlB1 = 38.6;
+static int RootPhase = 24;
+
+static double exp_approx(double x) {
+    x = iclamp(x, -40.0, 40.0);
+    double v = 1.0 + x / 65536.0;
+    for (int i = 0; i < 16; i++) v *= v;   // (1 + x/n)^n with n = 2^16
+    return v;
+}
+
+// Per-mille chances from the side to move's point of view; they always add up to 1000.
+static void score_to_wdl(int score, int phase, int& win, int& draw, int& loss) {
+    if (iabs(score) >= VALUE_MATE_IN_MAX) { win = score > 0 ? 1000 : 0; loss = 1000 - win; draw = 0; return; }
+    const double m = imin(phase, 24) / 24.0;
+    const double a = WdlA0 + WdlA1 * m, b = imax(WdlB0 + WdlB1 * m, 10.0);
+    win = (int)(1000.0 / (1.0 + exp_approx((a - score) / b)) + 0.5);
+    loss = (int)(1000.0 / (1.0 + exp_approx((a + score) / b)) + 0.5);
+    if (win + loss > 1000) { if (win > loss) win = 1000 - loss; else loss = 1000 - win; }
+    draw = 1000 - win - loss;
+}
+
 static void print_info(int depth, int score, u64 elapsed) {
     StrBuf s;
     s.add("info depth "); s.add_int(depth);
@@ -652,6 +683,11 @@ static void print_info(int depth, int score, u64 elapsed) {
         s.add(" score mate "); s.add_int(score > 0 ? n : -n);
     } else {
         s.add(" score cp "); s.add_int(score);
+    }
+    if (ShowWdl) {
+        int w, d, l;
+        score_to_wdl(score, RootPhase, w, d, l);
+        s.add(" wdl "); s.add_int(w); s.add_char(' '); s.add_int(d); s.add_char(' '); s.add_int(l);
     }
     s.add(" nodes "); s.add_int((i64)Nodes);
     s.add(" nps "); s.add_int((i64)(Nodes * 1000 / (elapsed ? elapsed : 1)));
@@ -671,6 +707,7 @@ SearchResult search_go(Position& pos, const Limits& lim, bool printInfo) {
     SearchStop = false;
     Nodes = 0; NmpMinPly = 0; RootDepth = 1;
     NodeLimit = lim.nodes;
+    RootPhase = pos.st->phase;
     NoiseSeed = StartTime * 0x2545F4914F6CDD1DULL + pos.st->key;
     // Full strength is deterministic, which means the same opening every game.
     // A few centipawns of noise in the first moves gives variety at no real cost.

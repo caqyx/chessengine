@@ -100,8 +100,13 @@ static void cmd_setoption(Tokens& t) {
         b.add(t.tok);
     }
     if (str_ieq(name.b, "Hash")) tt_resize((int)to_int(value.b));
-    else if (str_ieq(name.b, "Level")) search_set_level((int)to_int(value.b));
+    else if (str_ieq(name.b, "Level")) {
+        // What a strong search left in the hash must not help a weak level (and the noisy
+        // scores of a weak level must not mislead a strong one), so a change wipes it.
+        if (search_set_level((int)to_int(value.b))) { tt_clear(); search_clear(); }
+    }
     else if (str_ieq(name.b, "Move Overhead")) MoveOverhead = iclamp((int)to_int(value.b), 0, 5000);
+    else if (str_ieq(name.b, "UCI_ShowWDL")) ShowWdl = str_ieq(value.b, "true");
     else if (str_ieq(name.b, "Opening Variety")) OpeningVariety = str_ieq(value.b, "true");
     else if (str_ieq(name.b, "EvalMask")) { EvalMask = (int)to_int(value.b); eval_clear(); tt_clear(); }
     else if (str_ieq(name.b, "SearchMask")) SearchMask = (int)to_int(value.b);
@@ -199,6 +204,9 @@ static void cmd_datagen(Tokens& t) {
     int games = t.next() ? (int)to_int(t.tok) : 100;
     u64 nodes = t.next() ? (u64)to_int(t.tok) : 5000;
     u64 seed = (t.next() ? (u64)to_int(t.tok) : 1) * 0x9E3779B97F4A7C15ULL + 0x1234567;
+    // "mix": every game gives each side its own random budget between nodes/5 and 2*nodes,
+    // so that stronger and weaker players meet and the games are less alike.
+    const bool mix = t.next() && str_eq(t.tok, "mix");
     auto rnd = [&seed]() { seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17; return seed; };
     Limits lim;
     lim.depth = 0; lim.nodes = nodes; lim.movetime = 0; lim.movestogo = 0; lim.infinite = false;
@@ -221,11 +229,22 @@ static void cmd_datagen(Tokens& t) {
         }
         if (!ok || !Pos.has_legal_move() || iabs(evaluate(Pos)) > 400) { g--; continue; }
 
+        u64 budget[2] = {nodes, nodes};
+        if (mix) {
+            for (int c = 0; c < 2; c++) {
+                // log-uniform: pick an exponent, so 1,000..2,000 is as likely as 5,000..10,000
+                double x = (double)(rnd() >> 11) / 9007199254740992.0;   // 0..1
+                double factor = 0.2;
+                for (int i = 0; i < 100; i++) factor *= 1.0 + x * 0.023293;   // 0.2 * 10^x, about 0.2..2.0
+                budget[c] = (u64)imax(200.0, (double)nodes * factor);
+            }
+        }
         int nFens = 0, winStreak = 0, drawStreak = 0, result2 = -1;   // result2 = 2 * white score
         for (int ply = 0; ply < 500; ply++) {
             if (!Pos.has_legal_move()) { result2 = Pos.in_check() ? (Pos.stm == WHITE ? 0 : 2) : 1; break; }
             if (Pos.is_draw(0) || (!Pos.pieces(PAWN) && Pos.st->npm[0] + Pos.st->npm[1] <= 365)) { result2 = 1; break; }
             SearchStop = false;
+            lim.nodes = budget[Pos.stm];
             SearchResult r = search_go(Pos, lim, false);
             if (r.best == MOVE_NONE) { result2 = 1; break; }
             int white = Pos.stm == WHITE ? r.score : -r.score;
@@ -313,6 +332,8 @@ void uci_command(const char* line) {
         plat_out(b.b);
         plat_out("option name Level type spin default 10 min 1 max 10");
         plat_out("option name Move Overhead type spin default 10 min 0 max 5000");
+        plat_out(ShowWdl ? "option name UCI_ShowWDL type check default true"
+                         : "option name UCI_ShowWDL type check default false");
         plat_out(OpeningVariety ? "option name Opening Variety type check default true"
                                 : "option name Opening Variety type check default false");
         plat_out("option name Clear Hash type button");

@@ -33,8 +33,19 @@ const NUMERIC_INFO_FIELDS = ['depth', 'seldepth', 'multipv', 'nodes', 'nps', 'ha
  * @property {number} [depth]
  * @property {{type:'cp'|'mate', value:number, bound?:'lowerbound'|'upperbound'}} [score]
  *           from the side to move point of view
+ * @property {{win:number, draw:number, loss:number}} [wdl]
+ *           win / draw / loss chances in per-mille, from the side to move point of view;
+ *           absent when the engine does not report them
  * @property {string[]} [pv]
  */
+
+/** The three numbers after `wdl`, or null when they are missing or make no sense. */
+function parseWdl(tokens) {
+  if (tokens.length < 3) return null;
+  const [win, draw, loss] = tokens.map(Number);
+  const valid = [win, draw, loss].every((value) => Number.isFinite(value) && value >= 0) && win + draw + loss > 0;
+  return valid ? { win, draw, loss } : null;
+}
 
 /**
  * Parses one `info ...` line. Unknown tokens are skipped.
@@ -52,6 +63,12 @@ export function parseInfoLine(line) {
       info.score = { type: tokens[i + 1] === 'mate' ? 'mate' : 'cp', value: Number(tokens[i + 2]) };
       i += 2;
       if (tokens[i + 1] === 'lowerbound' || tokens[i + 1] === 'upperbound') info.score.bound = tokens[++i];
+    } else if (token === 'wdl') {
+      const wdl = parseWdl(tokens.slice(i + 1, i + 4));
+      if (wdl) {
+        info.wdl = wdl;
+        i += 3;
+      }
     } else if (token === 'pv') {
       info.pv = tokens.slice(i + 1);
       break;
@@ -96,6 +113,7 @@ export class EngineClient {
   #stubUrl;
   #onFallback;
   #hashMb;
+  #options;
   #createWorker;
 
   #worker = null;
@@ -116,6 +134,8 @@ export class EngineClient {
    * @param {(reason: string) => void} [options.onFallback]  called once when the stub takes over
    *        (reason is a short technical text), or with 'none' when no engine could be started at all
    * @param {number} [options.hashMb]
+   * @param {Object<string, string|number|boolean>} [options.engineOptions]  further UCI options,
+   *        sent with `setoption` every time a worker starts, e.g. { 'Opening Variety': false }
    * @param {(url: string) => Worker} [options.createWorker]  for tests
    */
   constructor({
@@ -123,12 +143,14 @@ export class EngineClient {
     stubUrl = STUB_WORKER_URL,
     onFallback = () => {},
     hashMb = 32,
+    engineOptions = {},
     createWorker = (url) => new Worker(url),
   } = {}) {
     this.#workerUrl = workerUrl;
     this.#stubUrl = stubUrl;
     this.#onFallback = onFallback;
     this.#hashMb = hashMb;
+    this.#options = { ...engineOptions };
     this.#createWorker = createWorker;
   }
 
@@ -243,6 +265,7 @@ export class EngineClient {
     this.#handshakeTimer = setTimeout(() => this.#fail('engine did not answer'), HANDSHAKE_TIMEOUT_MS);
     this.#post('uci');
     this.#post(`setoption name Hash value ${this.#hashMb}`);
+    for (const [name, value] of Object.entries(this.#options)) this.#post(`setoption name ${name} value ${value}`);
     this.#post('isready');
   }
 

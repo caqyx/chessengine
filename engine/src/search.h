@@ -19,6 +19,7 @@ struct SearchResult {
 
 extern volatile bool SearchStop;
 extern int MoveOverhead;
+extern bool ShowWdl;          // add "wdl W D L" (per-mille, side to move) to info lines
 extern bool OpeningVariety;   // small eval noise in the first moves so games differ
 extern int SearchMask;   // debug switch for A/B testing search features
 
@@ -31,7 +32,7 @@ void search_param_set(int i, int value);
 
 void search_init();
 void search_clear();                 // forget everything learned (new game)
-void search_set_level(int level);    // 1..10, 10 = full strength
+bool search_set_level(int level);    // 1..10, 10 = full strength; returns true if it changed
 SearchResult search_go(Position& pos, const Limits& lim, bool printInfo);
 
 // Tiny string builder: the engine core has no libc.
