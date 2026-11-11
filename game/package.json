@@ -1,0 +1,6 @@
+{
+  "name": "chess-rules-core",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node test/rules.test.mjs" }
+}

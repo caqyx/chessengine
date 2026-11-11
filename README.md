@@ -1,0 +1,90 @@
+# Tessera
+
+A chess game for the browser and the chess engine it plays against, both written from scratch.
+
+- **Game** (`index.html`, `game/`): plain HTML/CSS/JS, no build step, no dependencies. Play against the engine or a second person, with clocks, move list, takebacks, an analysis mode (eval bar, best-move arrow, engine line) and FEN/PGN import and export.
+- **Engine** (`engine/`): Tessera, a C++17 alpha-beta engine. One code base builds a native UCI binary (for GUIs and testing) and a 76 kB WebAssembly module that runs inside the page in a Web Worker.
+
+## Play
+
+Open the site (GitHub Pages: *Settings -> Pages -> Deploy from a branch -> `main` / root*), or locally:
+
+```bash
+python3 -m http.server 8000   # serve the repo root; a file:// URL cannot load the wasm worker
+# then open http://localhost:8000
+```
+
+## Build the engine
+
+```bash
+cd engine
+make              # native UCI binary -> engine/tessera   (g++ or clang++)
+make wasm         # WebAssembly build -> engine/web/engine.wasm   (clang with wasm32 target + wasm-ld)
+make test         # perft from the start position + internal consistency self-test
+./tessera bench   # fixed-depth search over 12 positions; node count must match between builds
+```
+
+The wasm build needs no emscripten and no libc: the engine core is freestanding C++ and imports only two functions from JavaScript (print a line, read the clock). `engine/web/engine.wasm` is committed so the site works without building anything.
+
+Use the native binary in any UCI GUI (Cute Chess, Arena, En Croissant, ...). Options: `Hash` (MB), `Level` (1-10, 10 = full strength), `Move Overhead` (ms).
+
+## How the engine works
+
+**Board.** Bitboards: one 64-bit integer per piece type and per color. Sliding-piece attacks come from magic bitboards (a multiply-and-shift hash from "which squares on the lines are blocked" to a precomputed attack set). Moves are 16 bits. Making a move updates the Zobrist hash, material, piece-square score and game phase incrementally; unmaking just steps a state pointer back.
+
+**Move generation.** Pseudo-legal generation with check evasions already restricted to "capture the checker or block", then a cheap legality test using precomputed pins. Verified with perft on six standard positions (start position depth 6 = 119,060,324 nodes at about 140 M nodes/s).
+
+**Search.** Iterative deepening with aspiration windows around a principal variation search. On top of plain alpha-beta:
+
+| Technique | What it does |
+|---|---|
+| Transposition table | 3-entry buckets, depth + age replacement; stores score, bound, static eval, best move |
+| Quiescence search | resolves captures and check evasions at the leaves, with SEE and delta pruning |
+| Move ordering | hash move, captures by victim value + capture history (SEE splits good/bad), killers, counter move, quiets by butterfly + continuation history |
+| Null move pruning | with verification search at high depth to avoid zugzwang errors |
+| Reverse futility, razoring, futility, late move pruning, SEE pruning | drop moves/nodes that cannot plausibly change the result at low depth |
+| ProbCut | a capture that beats beta by a margin at reduced depth cuts the node |
+| Late move reductions | later moves get a shallower search first; reduction adapts to history, PV/cut node, checks |
+| Singular extensions | extends the hash move when everything else is clearly worse; multi-cut when it is not |
+| Correction history | learns per pawn structure how far the static eval was off and corrects it |
+
+**Evaluation.** Hand-crafted, tapered between middlegame and endgame: material and piece-square tables (PeSTO), pawn structure (isolated, doubled, connected, passed; cached in a pawn hash), mobility, outposts, rooks on open files, bishop pair, king safety (pawn shelter plus an attack-unit danger model with safe checks), passed-pawn advancement and king distance, threats, and endgame scaling for drawish material (opposite bishops, no pawns, KBN-K corner knowledge).
+
+**Levels.** Levels 1-9 cap the search depth and add deterministic per-position noise to the evaluation, so weaker levels make plausible human-like mistakes instead of random moves.
+
+## Strength, honestly
+
+Tessera is not stronger than Stockfish and will not be. Stockfish is the product of well over a decade of work by many contributors, a distributed testing fleet that plays millions of games per change, and neural-network evaluation trained on billions of positions. Tessera is a classical engine with hand-set evaluation weights. It plays far above human level, but the realistic comparison is against Stockfish with its strength limited (`UCI_LimitStrength`).
+
+Measure it yourself:
+
+```bash
+pip install chess                       # python-chess, used as the match runner
+python3 tools/match.py --e1 engine/tessera --e2 /path/to/stockfish \
+    --opt2 "UCI_LimitStrength=true;UCI_Elo=2500" --tc 10+0.1 --games 200 --concurrency 2
+```
+
+The script plays every opening twice with colors swapped and prints the score, the Elo difference and a 95% interval.
+
+What has been verified in this repository:
+
+- perft matches the published node counts on six positions; `selftest` cross-checks `pseudo_legal()`, `gives_check()` and the incremental hash on 13.8 M random probes with 0 errors;
+- native and wasm builds search exactly the same tree (`bench` node counts are identical);
+- self-play ablations at a fixed node budget (see `docs/ablations.md`).
+
+## Layout
+
+```
+index.html                 the game
+game/js/chess.js           rules: legal moves, FEN, SAN, PGN, draw rules (perft-tested)
+game/js/*.js, game/css/    UI
+game/test/rules.test.mjs   node game/test/rules.test.mjs
+engine/src/                engine sources
+engine/web/                engine.wasm + engine-worker.js used by the game
+docs/engine-protocol.md    contract between game and engine worker
+tools/match.py             engine-vs-engine match runner
+```
+
+## Credits
+
+Piece-square tables are the PeSTO tables by Ronald Friederich. The search and evaluation ideas are the shared, well-documented toolkit of computer chess (chessprogramming.org); the king-danger model follows the classical Stockfish design. All code in this repository was written for this project.

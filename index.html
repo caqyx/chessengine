@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Play chess against the engine or a friend, then analyse the game.">
+  <title>Chess</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%23f3f2ed'/%3E%3Cg fill='%231c1e22'%3E%3Ccircle cx='50' cy='35' r='14'/%3E%3Cpath d='M37 78C39 65 46 58 45 47H55C54 58 61 65 63 78Z'/%3E%3Crect x='26' y='76' width='48' height='13' rx='3'/%3E%3C/g%3E%3C/svg%3E">
+  <link rel="stylesheet" href="game/css/base.css">
+  <link rel="stylesheet" href="game/css/board.css">
+  <link rel="stylesheet" href="game/css/layout.css">
+  <script src="game/js/theme-boot.js"></script>
+  <script type="module" src="game/js/main.js"></script>
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="masthead">
+      <h1 class="title">Chess</h1>
+      <button type="button" class="btn btn-solid" id="btn-new">New game</button>
+    </header>
+
+    <section class="player player-top" id="player-top" aria-label="Player at the top of the board">
+      <span class="player-side" aria-hidden="true"></span>
+      <span class="player-name"></span>
+      <span class="player-captured"></span>
+      <span class="player-lead"></span>
+      <span class="player-clock" role="timer" hidden></span>
+    </section>
+
+    <div class="board-wrap" id="board-wrap">
+      <div class="evalbar" id="evalbar" role="img" aria-label="Evaluation" hidden>
+        <div class="evalbar-white" id="evalbar-white"></div>
+        <span class="evalbar-label" id="evalbar-label"></span>
+      </div>
+      <div class="board" id="board" role="application" aria-label="Chess board"></div>
+    </div>
+
+    <section class="player player-bottom" id="player-bottom" aria-label="Player at the bottom of the board">
+      <span class="player-side" aria-hidden="true"></span>
+      <span class="player-name"></span>
+      <span class="player-captured"></span>
+      <span class="player-lead"></span>
+      <span class="player-clock" role="timer" hidden></span>
+    </section>
+
+    <div class="status" id="status">
+      <p class="status-line" id="status-line" role="status" aria-live="polite"></p>
+      <div class="status-review" id="status-review" hidden>
+        <span id="status-sub"></span>
+        <button type="button" class="btn btn-link" id="btn-live">Back to the game</button>
+      </div>
+    </div>
+
+    <ol class="moves" id="moves" aria-label="Moves"></ol>
+
+    <nav class="nav" aria-label="Move navigation">
+      <button type="button" class="btn btn-icon" id="btn-first" aria-label="First position" title="First position">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 6v12M18 6l-7 6 7 6"/></svg>
+      </button>
+      <button type="button" class="btn btn-icon" id="btn-prev" aria-label="Previous move" title="Previous move">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-7 6 7 6"/></svg>
+      </button>
+      <button type="button" class="btn btn-icon" id="btn-next" aria-label="Next move" title="Next move">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l7 6-7 6"/></svg>
+      </button>
+      <button type="button" class="btn btn-icon" id="btn-last" aria-label="Latest position" title="Latest position">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 6v12M6 6l7 6-7 6"/></svg>
+      </button>
+      <button type="button" class="btn btn-icon" id="btn-flip" aria-label="Flip board" title="Flip board">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 20V5M4.5 8.5L8 5l3.5 3.5M16 4v15M12.5 15.5L16 19l3.5-3.5"/></svg>
+      </button>
+    </nav>
+
+    <div class="actions" role="group" aria-label="Game actions">
+      <button type="button" class="btn" id="btn-undo">Undo</button>
+      <button type="button" class="btn" id="btn-hint">Hint</button>
+      <button type="button" class="btn" id="btn-resign">Resign</button>
+      <button type="button" class="btn" id="btn-analysis" aria-pressed="false">Analysis</button>
+      <button type="button" class="btn" id="btn-more" aria-haspopup="dialog">More</button>
+    </div>
+
+    <div class="analysis" id="analysis" hidden>
+      <span class="analysis-score" id="analysis-score"></span>
+      <span class="analysis-depth" id="analysis-depth"></span>
+      <span class="analysis-line" id="analysis-line"></span>
+    </div>
+
+    <p class="notice" id="notice" role="status" hidden></p>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <dialog class="sheet" id="dialog-new" aria-labelledby="dialog-new-title">
+    <form method="dialog" id="form-new">
+      <h2 class="sheet-title" id="dialog-new-title">New game</h2>
+
+      <fieldset class="field">
+        <legend>Opponent</legend>
+        <div class="choices choices-2">
+          <label class="choice"><input type="radio" name="mode" value="engine" checked><span>Engine</span></label>
+          <label class="choice"><input type="radio" name="mode" value="local"><span>Two players</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset class="field" data-engine-only>
+        <legend>You play</legend>
+        <div class="choices choices-3">
+          <label class="choice"><input type="radio" name="color" value="w" checked><span>White</span></label>
+          <label class="choice"><input type="radio" name="color" value="b"><span>Black</span></label>
+          <label class="choice"><input type="radio" name="color" value="random"><span>Random</span></label>
+        </div>
+      </fieldset>
+
+      <div class="field" data-engine-only>
+        <label class="field-label" for="input-level">Engine level <output id="output-level" for="input-level">4</output> of 10</label>
+        <input class="range" type="range" id="input-level" name="level" min="1" max="10" step="1" value="4">
+      </div>
+
+      <fieldset class="field">
+        <legend>Clock</legend>
+        <div class="choices choices-3">
+          <label class="choice"><input type="radio" name="timeControl" value="none" checked><span>None</span></label>
+          <label class="choice"><input type="radio" name="timeControl" value="1+0"><span>1 + 0</span></label>
+          <label class="choice"><input type="radio" name="timeControl" value="3+2"><span>3 + 2</span></label>
+          <label class="choice"><input type="radio" name="timeControl" value="5+0"><span>5 + 0</span></label>
+          <label class="choice"><input type="radio" name="timeControl" value="10+0"><span>10 + 0</span></label>
+          <label class="choice"><input type="radio" name="timeControl" value="15+10"><span>15 + 10</span></label>
+        </div>
+        <p class="field-help">Minutes per side + seconds added after each move.</p>
+      </fieldset>
+
+      <div class="sheet-actions">
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" class="btn btn-solid">Start game</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="sheet" id="dialog-menu" aria-labelledby="dialog-menu-title">
+    <h2 class="sheet-title" id="dialog-menu-title">More</h2>
+    <ul class="menu">
+      <li><button type="button" class="menu-item" data-action="copy-fen">Copy position (FEN)</button></li>
+      <li><button type="button" class="menu-item" data-action="load-fen">Load position (FEN)</button></li>
+      <li><button type="button" class="menu-item" data-action="copy-pgn">Copy game (PGN)</button></li>
+      <li><button type="button" class="menu-item" data-action="download-pgn">Download game (PGN)</button></li>
+      <li><button type="button" class="menu-item" data-action="load-pgn">Load game (PGN)</button></li>
+      <li><button type="button" class="menu-item" data-action="toggle-legal" role="switch" aria-checked="true">Show legal moves <span class="menu-state"></span></button></li>
+      <li><button type="button" class="menu-item" data-action="toggle-theme" role="switch" aria-checked="false">Dark theme <span class="menu-state"></span></button></li>
+    </ul>
+    <div class="sheet-actions">
+      <button type="button" class="btn" data-close>Close</button>
+    </div>
+  </dialog>
+
+  <dialog class="sheet" id="dialog-fen" aria-labelledby="dialog-fen-title">
+    <form method="dialog" novalidate>
+      <h2 class="sheet-title" id="dialog-fen-title">Load position</h2>
+      <div class="field">
+        <label class="field-label" for="input-fen">FEN</label>
+        <input class="text-input" type="text" id="input-fen" name="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="error-fen">
+        <p class="field-error" id="error-fen" role="alert" hidden></p>
+        <p class="field-help">The game restarts from this position with the current opponent and clock.</p>
+      </div>
+      <div class="sheet-actions">
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" class="btn btn-solid">Load position</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="sheet" id="dialog-pgn" aria-labelledby="dialog-pgn-title">
+    <form method="dialog" novalidate>
+      <h2 class="sheet-title" id="dialog-pgn-title">Load game</h2>
+      <div class="field">
+        <label class="field-label" for="input-pgn">PGN</label>
+        <textarea class="text-input" id="input-pgn" name="text" rows="7" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="error-pgn"></textarea>
+        <p class="field-error" id="error-pgn" role="alert" hidden></p>
+        <p class="field-help">The game opens in two-player mode so you can step through it or analyse it.</p>
+      </div>
+      <div class="sheet-actions">
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" class="btn btn-solid">Load game</button>
+      </div>
+    </form>
+  </dialog>
+
+  <noscript><p class="notice">This chess game needs JavaScript.</p></noscript>
+</body>
+</html>
