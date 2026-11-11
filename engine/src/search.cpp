@@ -40,6 +40,7 @@ SPARAM(ProbCutMargin, 180)
 SPARAM(AspDelta, 12)
 SPARAM(QsFutility, 180)
 SPARAM(SingularMul, 2)
+SPARAM(EvalScale, 100)      // percent applied to the static evaluation before the search uses it
 
 static void init_lmr_table();
 
@@ -63,6 +64,7 @@ static const SearchParam SearchParams[] = {
     {"AspDelta", &AspDelta},
     {"QsFutility", &QsFutility},
     {"SingularMul", &SingularMul},
+    {"EvalScale", &EvalScale},
 };
 int search_param_count() { return (int)(sizeof(SearchParams) / sizeof(SearchParams[0])); }
 const char* search_param_name(int i) { return SearchParams[i].name; }
@@ -153,7 +155,7 @@ static inline int quiet_history(const Position& pos, const Stack* ss, Move m) {
 }
 
 static inline int raw_eval(const Position& pos) {
-    int v = evaluate(pos);
+    int v = evaluate(pos) * EvalScale / 100;
     if (NoiseAmp) {   // weakened levels: deterministic per-position noise
         u64 h = (pos.st->key ^ NoiseSeed) * 0x9E3779B97F4A7C15ULL;
         v += (int)((h >> 40) % (u64)(2 * NoiseAmp + 1)) - NoiseAmp;

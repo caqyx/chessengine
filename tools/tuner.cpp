@@ -217,6 +217,7 @@ int main(int argc, char** argv) {
     size_t bad = 0, mismatch = 0, lineNo = 0;
     double worst = 0;
     std::vector<int> seen(P_COUNT, 0);
+    std::vector<double> shelterWeight(16, 0.0);   // how much middlegame weight each shelter entry saw
     while (std::getline(in, line)) {
         if (lineNo++ % stride) continue;
         size_t semi = line.find(';'), last = line.rfind(';');
@@ -246,6 +247,10 @@ int main(int argc, char** argv) {
                 if (Trace.king[c].shelter2[j]) seen[P_SHELTER + j]++;
             }
         }
+        const double mgShare = Trace.phase / 24.0;
+        for (int c = 0; c < 2; c++)
+            for (int j = 0; j < 16; j++)
+                if (Trace.king[c].shelter2[j]) shelterWeight[j] += mgShare;
         const KingValue kw = king_value(s.king[WHITE]), kb = king_value(s.king[BLACK]);
         s.resMg = (float)(Trace.mg - lmg - (kw.mg - kb.mg));
         s.resEg = (float)(Trace.eg - leg - (kw.eg - kb.eg));
@@ -366,6 +371,17 @@ int main(int argc, char** argv) {
                 break;
             }
         }
+    }
+
+    // Same idea for the shelter and storm tables, which have no smooth neighbours to borrow
+    // from. They only count in the middlegame, so an entry that shows up mostly in endgames
+    // (a king blockading a pawn on the 7th) has almost no signal: it keeps its starting value.
+    for (int j = 0; j < 16; j++) {
+        if (shelterWeight[j] >= trusted) continue;
+        const int start = j < 8 ? ShelterBonus[j] : StormPenalty[j - 8];
+        if (seen[P_SHELTER + j])
+            std::printf("%s[%d] has too little middlegame data: keeping %d\n", j < 8 ? "ShelterBonus" : "StormPenalty", j % 8, start);
+        P[P_SHELTER + j] = start;
     }
 
     // Average piece values, as a sanity check a human can read.
