@@ -103,6 +103,7 @@ tools/train_net.py         trains the neural-network evaluation on that data (wr
 tools/embed_net.py         compiles a trained network into the engine
 engine/net/tessera.nnue    the network the engine ships with
 tools/fit_wdl.py           fits the win/draw/loss model shown in the game
+tools/import_lichess.py    optional: imports Lichess's Stockfish evaluations as training data (see docs/training.md)
 data/                      4 million self-play positions with scores and results
 ```
 

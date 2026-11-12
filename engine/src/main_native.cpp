@@ -39,10 +39,27 @@ const unsigned char* plat_read_file(const char* path, size_t* size) {
     return (const unsigned char*)buffer.data();
 }
 
+// One training record (68 bytes): 32 network input numbers from White's side (768 = unused
+// slot), the score for White in centipawns (32767 = none), side to move (0 = White) and twice
+// the game result for White (255 = no result known, e.g. positions that come without a game).
+static void make_record(const Position& pos, int score, int result2, unsigned char rec[68]) {
+    int n = 0;
+    for (Bitboard b = pos.all(); b && n < 32;) {
+        int sq = pop_lsb(b);
+        int f = nnue_input(WHITE, pos.board[sq], sq);
+        rec[2 * n] = (unsigned char)(f & 255); rec[2 * n + 1] = (unsigned char)(f >> 8);
+        n++;
+    }
+    for (; n < 32; n++) { rec[2 * n] = 768 & 255; rec[2 * n + 1] = 768 >> 8; }
+    if (score != 32767) score = score > 32000 ? 32000 : score < -32000 ? -32000 : score;
+    rec[64] = (unsigned char)(score & 255); rec[65] = (unsigned char)((score >> 8) & 255);
+    rec[66] = (unsigned char)pos.stm;
+    rec[67] = (unsigned char)result2;
+}
+
 // tessera pack <in.txt> <out.bin>
-// Converts "fen;score;result" lines (or "fen;result") into fixed 68-byte records for the
-// trainer: 32 network input numbers from White's side (768 = unused slot), the score for
-// White in centipawns (32767 = none), side to move (0 = White) and twice the result for White.
+// Converts "fen;score;result" lines (or "fen;result") into training records. A result of "-"
+// means "no game result" (score-only data).
 static int pack_file(const char* inPath, const char* outPath) {
     std::ifstream in(inPath);
     FILE* out = std::fopen(outPath, "wb");
@@ -53,25 +70,11 @@ static int pack_file(const char* inPath, const char* outPath) {
     while (std::getline(in, line)) {
         size_t first = line.find(';'), last = line.rfind(';');
         if (first == std::string::npos || !pos.set(line.substr(0, first).c_str())) { skipped++; continue; }
+        const int score = last != first ? std::atoi(line.c_str() + first + 1) : 32767;
+        const char* res = line.c_str() + last + 1;
+        const int result2 = res[0] == '-' && res[1] == 0 ? 255 : (int)(std::atof(res) * 2 + 0.5);
         unsigned char rec[68];
-        int n = 0;
-        for (Bitboard b = pos.all(); b && n < 32;) {
-            int sq = pop_lsb(b);
-            int f = nnue_input(WHITE, pos.board[sq], sq);
-            rec[2 * n] = (unsigned char)(f & 255); rec[2 * n + 1] = (unsigned char)(f >> 8);
-            n++;
-        }
-        for (; n < 32; n++) { rec[2 * n] = 768 & 255; rec[2 * n + 1] = 768 >> 8; }
-        int score = 32767;
-        if (last != first) {
-            score = std::atoi(line.c_str() + first + 1);
-            if (score > 32000) score = 32000;
-            if (score < -32000) score = -32000;
-        }
-        double result = std::atof(line.c_str() + last + 1);
-        rec[64] = (unsigned char)(score & 255); rec[65] = (unsigned char)((score >> 8) & 255);
-        rec[66] = (unsigned char)pos.stm;
-        rec[67] = (unsigned char)(result * 2 + 0.5);
+        make_record(pos, score, result2, rec);
         std::fwrite(rec, 1, sizeof(rec), out);
         written++;
     }
@@ -80,9 +83,12 @@ static int pack_file(const char* inPath, const char* outPath) {
     return 0;
 }
 
+#include "lichess_import.h"
+
 int main(int argc, char** argv) {
     engine_init();
     if (argc == 4 && std::strcmp(argv[1], "pack") == 0) return pack_file(argv[2], argv[3]);
+    if (argc >= 2 && std::strncmp(argv[1], "lichess", 7) == 0) return lichess_command(argc, argv);
 
     // Commands given on the command line run once and exit, e.g. `tessera bench`.
     if (argc > 1) {

@@ -167,6 +167,42 @@ is already level with the hand-written evaluation, so with 30 to 40 million it
 has a good chance of passing it. The match above is what decides; if it is
 still behind, generate more (step 1) and train again with `--fresh`.
 
+## Optional: Stockfish evaluations from Lichess
+
+Lichess publishes about 418 million positions evaluated by Stockfish, as a
+public-domain (CC0) download: the "evaluations" file on
+https://database.lichess.org/ (`lichess_db_eval.jsonl.zst`). It can be added
+to the training data.
+
+**It changes what the engine is.** A network trained on it learns partly from
+Stockfish's judgment, so Tessera is then no longer "trained only on its own
+games". If a network trained with it ships, the README has to say so.
+
+```bash
+pip install zstandard                                          # reads the compressed file
+python3 tools/import_lichess.py path/to/lichess_db_eval.jsonl.zst   # calibrate, then import; Ctrl+C stops, same command continues
+python3 tools/train_net.py --data data/round3 data/lichess --out nets-lichess   # train on your newest round plus Lichess
+```
+
+What the import does:
+
+- **Calibration, once, about a minute:** Tessera searches 4,000 positions from the
+  file and compares its scores with Stockfish's. That decides whether the file's
+  scores are from White's side or the side to move (the database does not say),
+  and converts Stockfish centipawns to Tessera's scale.
+- **Import:** the file is decompressed on the fly. For each position it takes the
+  deepest evaluation and its first move, as Lichess recommends. It keeps quiet
+  positions only: not in check, first move not a capture or promotion, no mate
+  scores, nothing beyond 15 pawns. That's the same filter as Tessera's own data.
+- **Output:** records go to `data/lichess/` in 10-million-position chunks of about
+  680 MB, by default up to 100 million positions (`--max` to change). Each finished
+  chunk is saved, so stopping loses at most the chunk in progress.
+- **Training:** these positions have no game result, so the trainer learns them
+  from the score alone; your own games keep the usual 80/20 mix of score and result.
+
+Import speed was about 530,000 lines per second in testing (one thread), so
+the whole file takes roughly 15 to 20 minutes.
+
 ## Step 3: put a better network into the engine
 
 The engine ships with the network in `engine/net/tessera.nnue`. To replace it

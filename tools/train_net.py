@@ -69,10 +69,7 @@ def pack_all(engine, packed_dir, folders):
         with open(manifest_path) as f:
             manifest = json.load(f)
     wanted = set()
-    files = sources(folders)
-    if not files:
-        sys.exit("No data files (*.txt or *.txt.xz) in: " + ", ".join(os.path.relpath(f, ROOT) for f in folders))
-    for src in files:
+    for src in sources(folders):
         name = os.path.basename(src).replace(".txt.xz", "").replace(".txt", "") + ".bin"
         out = os.path.join(packed_dir, name)
         wanted.add(name)
@@ -102,7 +99,8 @@ def pack_all(engine, packed_dir, folders):
         if name.endswith(".bin") and name not in wanted:
             os.unlink(os.path.join(packed_dir, name))
     total = sum(os.path.getsize(os.path.join(packed_dir, n)) for n in os.listdir(packed_dir) if n.endswith(".bin")) // 68
-    print(f"{total:,} positions ready.\n", flush=True)
+    if total:
+        print(f"{total:,} positions converted.\n", flush=True)
     return total
 
 
@@ -118,13 +116,20 @@ def main():
         folders = [os.path.join(ROOT, "data"), os.path.join(ROOT, "data", "local")]
         packed = os.path.join(ROOT, "data", "packed")
     pack_all(engine, packed, folders)
+    # Folders that already hold training records (e.g. data/lichess from tools/import_lichess.py)
+    # are read as they are, next to the converted text files.
+    ready = [f for f in folders if os.path.isdir(f) and any(n.endswith(".bin") for n in os.listdir(f))]
+    has_packed = any(n.endswith(".bin") for n in os.listdir(packed))
+    if not has_packed and not ready:
+        sys.exit("No data found in: " + ", ".join(os.path.relpath(f, ROOT) for f in folders))
+    data_arg = ",".join(([packed] if has_packed else []) + ready)
     if args.fresh and os.path.isdir(args.out):
         for name in ("checkpoint.bin", "tessera.nnue"):
             path = os.path.join(args.out, name)
             if os.path.exists(path):
                 os.unlink(path)
 
-    cmd = [trainer, "--data", packed, "--out", args.out, "--hidden", str(args.hidden),
+    cmd = [trainer, "--data", data_arg, "--out", args.out, "--hidden", str(args.hidden),
            "--epochs", str(args.epochs), "--threads", str(args.threads)]
     proc = subprocess.Popen(cmd)
     # Ctrl+C goes to the trainer as well; it finishes its current step, saves and exits. Just wait for it.

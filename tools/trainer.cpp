@@ -44,7 +44,7 @@ struct Record {
     uint16_t input[32];   // network inputs from White's side, 768 = unused
     int16_t score;        // centipawns for White, 32767 = none
     uint8_t stm;          // 0 = White to move
-    uint8_t result2;      // twice the game result for White
+    uint8_t result2;      // twice the game result for White, 255 = unknown (score-only data)
 };
 #pragma pack(pop)
 
@@ -98,12 +98,14 @@ static float process(const Record& r, const Layout& L, const float* P, float* gr
     }
     const float predicted = sigmoidf(out);
 
+    // Target: a blend of the game result and the squashed search score. Positions without a
+    // result (imported evaluations) learn from the score alone.
     float result = r.result2 * 0.5f;
     if (r.stm) result = 1.0f - result;
     float target = result;
     if (r.score != 32767) {
-        const float score = r.stm ? -(float)r.score : (float)r.score;
-        target = (float)(resultWeight * result + (1.0 - resultWeight) * sigmoidf(score / (float)SCALE));
+        const float score = sigmoidf((r.stm ? -(float)r.score : (float)r.score) / (float)SCALE);
+        target = r.result2 == 255 ? score : (float)(resultWeight * result + (1.0 - resultWeight) * score);
     }
     const float diff = predicted - target;
     if (!grad) return diff * diff;
@@ -171,10 +173,18 @@ int main(int argc, char** argv) {
     // ---- data: every file is split into a training part and a validation tail (2%).
     // Positions of a game are neighbours in the file, so a tail keeps whole games unseen.
     std::vector<fs::path> files;
-    if (fs::exists(opt.data))
-        for (auto& e : fs::directory_iterator(opt.data))
-            if (e.path().extension() == ".bin") files.push_back(e.path());
-    std::sort(files.begin(), files.end());
+    for (size_t start = 0; start <= opt.data.size();) {          // --data accepts "dir1,dir2,..."
+        size_t comma = opt.data.find(',', start);
+        if (comma == std::string::npos) comma = opt.data.size();
+        const fs::path dir = opt.data.substr(start, comma - start);
+        std::vector<fs::path> here;
+        if (!dir.empty() && fs::exists(dir))
+            for (auto& e : fs::directory_iterator(dir))
+                if (e.path().extension() == ".bin") here.push_back(e.path());
+        std::sort(here.begin(), here.end());
+        files.insert(files.end(), here.begin(), here.end());
+        start = comma + 1;
+    }
     std::vector<Record> data;
     std::vector<uint32_t> trainIndex, valIndex;
     for (auto& f : files) {
@@ -184,7 +194,11 @@ int main(int argc, char** argv) {
         if (!in || std::fread(data.data() + base, sizeof(Record), n, in) != n) { std::fprintf(stderr, "cannot read %s\n", f.string().c_str()); return 1; }
         std::fclose(in);
         const size_t val = n / 50;
-        for (size_t i = 0; i < n; i++) (i < n - val ? trainIndex : valIndex).push_back((uint32_t)(base + i));
+        for (size_t i = 0; i < n; i++) {
+            const Record& r = data[base + i];
+            if (r.score == 32767 && r.result2 == 255) continue;   // nothing to learn from
+            (i < n - val ? trainIndex : valIndex).push_back((uint32_t)(base + i));
+        }
     }
     if (trainIndex.size() < 100000) { std::fprintf(stderr, "Not enough data in %s (found %zu positions). Run `tessera pack` first.\n", opt.data.c_str(), data.size()); return 1; }
     std::printf("%zu positions in %zu files: %zu for training, %zu held out\n", data.size(), files.size(), trainIndex.size(), valIndex.size());
