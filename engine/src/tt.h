@@ -18,6 +18,7 @@ struct TTBucket {
 };
 
 void tt_resize(int megabytes);
+int tt_megabytes();
 void tt_clear();
 void tt_new_search();
 // Returns the matching entry or null. *slot always receives the entry to write to.

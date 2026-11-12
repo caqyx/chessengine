@@ -8,6 +8,10 @@
 #include "platform.h"
 #include "net_data.h"
 
+#ifndef DATAGEN_HASH_MB
+#define DATAGEN_HASH_MB 16
+#endif
+
 #ifndef DEFAULT_HASH_MB
 #define DEFAULT_HASH_MB 64
 #endif
@@ -231,6 +235,10 @@ static void cmd_datagen(Tokens& t) {
     lim.time[0] = lim.time[1] = lim.inc[0] = lim.inc[1] = 0;
     const bool variety = OpeningVariety;
     OpeningVariety = false;
+    // A few thousand nodes per move never fill a big table, and a small one stays in the
+    // CPU cache: about 10% faster generation with the same search budget per move.
+    const int hashBefore = tt_megabytes();
+    if (hashBefore > DATAGEN_HASH_MB) tt_resize(DATAGEN_HASH_MB);
     static char fens[400][96];
     static int scores[400];
 
@@ -289,6 +297,7 @@ static void cmd_datagen(Tokens& t) {
         }
     }
     OpeningVariety = variety;
+    if (tt_megabytes() != hashBefore) tt_resize(hashBefore);
     Pos.set(StartFen);
 }
 

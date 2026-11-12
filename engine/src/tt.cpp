@@ -5,6 +5,9 @@ static TTBucket* Table = nullptr;
 static size_t TableBytes = 0;
 static u32 NumBuckets = 0;
 static u8 Generation = 4;
+static int Megabytes = 0;
+
+int tt_megabytes() { return Megabytes; }
 
 void tt_resize(int megabytes) {
     megabytes = iclamp(megabytes, 1, 4096);
@@ -14,6 +17,7 @@ void tt_resize(int megabytes) {
     Table = (TTBucket*)p;
     TableBytes = bytes;
     NumBuckets = (u32)(bytes / sizeof(TTBucket));
+    Megabytes = megabytes;
     tt_clear();
 }
 
