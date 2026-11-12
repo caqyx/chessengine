@@ -20,9 +20,12 @@ static int QA = 255, QB = 64, Scale = 181;
 alignas(64) static i16 FtWeights[NNUE_INPUTS][NNUE_MAX_H];
 alignas(64) static i16 FtBias[NNUE_MAX_H];
 alignas(64) static i16 OutWeights[2 * NNUE_MAX_H];
-// The vector output needs (activation x weight) to fit 16 bits and the total to fit 32 bits.
-// Checked once per network; a network outside those limits uses the exact 64-bit loop.
-static bool FastOutput = false;
+// How the output layer is computed, chosen once per network so the result is always exact:
+//   OUT_MADD16  activation x weight fits 16 bits and the total fits 32 bits (fastest)
+//   OUT_MUL32   the products need 32 bits, the total still fits 32 bits
+//   OUT_SCALAR  anything else: the plain 64-bit loop
+enum { OUT_SCALAR, OUT_MUL32, OUT_MADD16 };
+static int OutputPath = OUT_SCALAR;
 static i32 OutBias;
 
 static u32 read_u32(const unsigned char* p) { return (u32)p[0] | ((u32)p[1] << 8) | ((u32)p[2] << 16) | ((u32)p[3] << 24); }
@@ -51,7 +54,8 @@ bool nnue_load(const unsigned char* d, size_t size) {
         worstWeight = imax(worstWeight, w);
         worstTotal += (i64)QA * QA * w;
     }
-    FastOutput = h % 16 == 0 && (i64)QA * worstWeight < 32768 && worstTotal < 2147483647LL;
+    const bool totalFits = h % 16 == 0 && worstTotal < 2147483647LL;
+    OutputPath = !totalFits ? OUT_SCALAR : (i64)QA * worstWeight < 32768 ? OUT_MADD16 : OUT_MUL32;
     NnueHidden = h;
     Loaded = true;
     NnueActive = true;
@@ -132,13 +136,25 @@ void nnue_apply(Accumulator dst, const Accumulator src,
 // Sum over one side's hidden units of clamp(x, 0, QA)^2 * weight.
 static inline i64 output_sum(const i16* acc, const i16* w, int h) {
 #if defined(NNUE_AVX2)
-    if (FastOutput) {
+    if (OutputPath != OUT_SCALAR) {
         const __m256i zero = _mm256_setzero_si256(), top = _mm256_set1_epi16((short)QA);
         __m256i total = _mm256_setzero_si256();
-        for (int i = 0; i < h; i += 16) {
-            __m256i c = _mm256_min_epi16(_mm256_max_epi16(_mm256_loadu_si256((const __m256i*)(acc + i)), zero), top);
-            __m256i cw = _mm256_mullo_epi16(c, _mm256_loadu_si256((const __m256i*)(w + i)));   // fits 16 bits (checked at load)
-            total = _mm256_add_epi32(total, _mm256_madd_epi16(cw, c));                         // c * (c * w), pairs summed into 32 bits
+        if (OutputPath == OUT_MADD16) {
+            for (int i = 0; i < h; i += 16) {
+                __m256i c = _mm256_min_epi16(_mm256_max_epi16(_mm256_loadu_si256((const __m256i*)(acc + i)), zero), top);
+                __m256i cw = _mm256_mullo_epi16(c, _mm256_loadu_si256((const __m256i*)(w + i)));   // fits 16 bits (checked at load)
+                total = _mm256_add_epi32(total, _mm256_madd_epi16(cw, c));                         // c * (c * w), pairs summed into 32 bits
+            }
+        } else {
+            for (int i = 0; i < h; i += 16) {
+                __m256i c = _mm256_min_epi16(_mm256_max_epi16(_mm256_loadu_si256((const __m256i*)(acc + i)), zero), top);
+                __m256i wv = _mm256_loadu_si256((const __m256i*)(w + i));
+                __m256i lo = _mm256_mullo_epi16(c, wv), hi = _mm256_mulhi_epi16(c, wv);
+                // full 32-bit products c * w, and c widened to 32 bits in the same lane order
+                __m256i p0 = _mm256_unpacklo_epi16(lo, hi), p1 = _mm256_unpackhi_epi16(lo, hi);
+                __m256i c0 = _mm256_unpacklo_epi16(c, zero), c1 = _mm256_unpackhi_epi16(c, zero);
+                total = _mm256_add_epi32(total, _mm256_add_epi32(_mm256_mullo_epi32(p0, c0), _mm256_mullo_epi32(p1, c1)));
+            }
         }
         __m128i s = _mm_add_epi32(_mm256_castsi256_si128(total), _mm256_extracti128_si256(total, 1));
         s = _mm_add_epi32(s, _mm_shuffle_epi32(s, 0x4E));
@@ -146,13 +162,19 @@ static inline i64 output_sum(const i16* acc, const i16* w, int h) {
         return _mm_cvtsi128_si32(s);
     }
 #elif defined(NNUE_WASM)
-    if (FastOutput) {
+    if (OutputPath != OUT_SCALAR) {
         const v128_t zero = wasm_i16x8_splat(0), top = wasm_i16x8_splat((short)QA);
         v128_t total = wasm_i32x4_splat(0);
         for (int i = 0; i < h; i += 8) {
             v128_t c = wasm_i16x8_min(wasm_i16x8_max(wasm_v128_load(acc + i), zero), top);
-            v128_t cw = wasm_i16x8_mul(c, wasm_v128_load(w + i));
-            total = wasm_i32x4_add(total, wasm_i32x4_dot_i16x8(cw, c));
+            v128_t wv = wasm_v128_load(w + i);
+            if (OutputPath == OUT_MADD16) {
+                total = wasm_i32x4_add(total, wasm_i32x4_dot_i16x8(wasm_i16x8_mul(c, wv), c));
+            } else {
+                v128_t p0 = wasm_i32x4_extmul_low_i16x8(c, wv), p1 = wasm_i32x4_extmul_high_i16x8(c, wv);
+                v128_t c0 = wasm_u32x4_extend_low_u16x8(c), c1 = wasm_u32x4_extend_high_u16x8(c);
+                total = wasm_i32x4_add(total, wasm_i32x4_add(wasm_i32x4_mul(p0, c0), wasm_i32x4_mul(p1, c1)));
+            }
         }
         return (i64)wasm_i32x4_extract_lane(total, 0) + wasm_i32x4_extract_lane(total, 1)
              + wasm_i32x4_extract_lane(total, 2) + wasm_i32x4_extract_lane(total, 3);
