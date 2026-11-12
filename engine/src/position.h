@@ -30,7 +30,16 @@ struct Position {
     State* st;
     State states[MAX_HIST];
     // Network accumulators, one per entry of `states` (only maintained while a network is active).
-    Accumulator accStack[MAX_HIST];
+    // The accumulator of a position is only computed when that position is evaluated: make()
+    // records what changed, and the evaluation applies the pending changes from the nearest
+    // position whose accumulator is up to date. Many positions are never evaluated (hash
+    // cut-offs, draws, pruning), so this skips a good share of the work.
+    struct AccDelta { u8 ns, na, subPiece[3], subSq[3], addPiece[2], addSq[2]; };
+    alignas(64) mutable Accumulator accStack[MAX_HIST];
+    mutable bool accReady[MAX_HIST];
+    AccDelta accDelta[MAX_HIST];
+    // Bring the accumulator of the current position up to date and return it.
+    const i16 (*accumulator() const)[NNUE_MAX_H];
 
     bool set(const char* fen);
     void fen(char* out) const;

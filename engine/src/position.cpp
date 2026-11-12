@@ -162,7 +162,24 @@ bool Position::set(const char* f) {
 }
 
 void Position::refresh_accumulator() {
-    if (NnueActive) nnue_refresh(*this, accStack[st - states]);
+    if (!NnueActive) return;
+    nnue_refresh(*this, accStack[st - states]);
+    accReady[st - states] = true;
+}
+
+const i16 (*Position::accumulator() const)[NNUE_MAX_H] {
+    const int cur = (int)(st - states);
+    int i = cur;
+    while (!accReady[i]) i--;          // index 0 (or the last refresh) is always ready
+    for (int k = i + 1; k <= cur; k++) {
+        const AccDelta& d = accDelta[k];
+        int subPiece[3], subSq[3], addPiece[2], addSq[2];
+        for (int j = 0; j < d.ns; j++) { subPiece[j] = d.subPiece[j]; subSq[j] = d.subSq[j]; }
+        for (int j = 0; j < d.na; j++) { addPiece[j] = d.addPiece[j]; addSq[j] = d.addSq[j]; }
+        nnue_apply(accStack[k], accStack[k - 1], subPiece, subSq, d.ns, addPiece, addSq, d.na);
+        accReady[k] = true;
+    }
+    return accStack[cur];
 }
 
 void Position::fen(char* out) const {
@@ -266,16 +283,19 @@ void Position::make(Move m) {
 
     if (NnueActive) {
         // The move switched a few network inputs: copy the parent's accumulator and patch it.
-        i16 (*acc)[NNUE_MAX_H] = accStack[n - states];
-        nnue_copy(acc, accStack[n - states - 1]);
-        if (captured != NO_PIECE) nnue_sub(acc, captured, flag == MF_EP ? (us == WHITE ? to - 8 : to + 8) : to);
-        nnue_sub(acc, pc, from);
-        nnue_add(acc, (flag & 8) ? make_piece(us, promo_type(m)) : pc, to);
+        // Only note what changed; the accumulator is computed if this position gets evaluated.
+        const int idx = (int)(n - states);
+        AccDelta& d = accDelta[idx];
+        d.ns = d.na = 0;
+        d.subPiece[d.ns] = (u8)pc; d.subSq[d.ns++] = (u8)from;
+        d.addPiece[d.na] = (u8)((flag & 8) ? make_piece(us, promo_type(m)) : pc); d.addSq[d.na++] = (u8)to;
+        if (captured != NO_PIECE) { d.subPiece[d.ns] = (u8)captured; d.subSq[d.ns++] = (u8)(flag == MF_EP ? (us == WHITE ? to - 8 : to + 8) : to); }
         if (flag == MF_KCASTLE || flag == MF_QCASTLE) {
             const int rook = make_piece(us, ROOK);
-            nnue_sub(acc, rook, flag == MF_KCASTLE ? to + 1 : to - 2);
-            nnue_add(acc, rook, flag == MF_KCASTLE ? to - 1 : to + 1);
+            d.subPiece[d.ns] = (u8)rook; d.subSq[d.ns++] = (u8)(flag == MF_KCASTLE ? to + 1 : to - 2);
+            d.addPiece[d.na] = (u8)rook; d.addSq[d.na++] = (u8)(flag == MF_KCASTLE ? to - 1 : to + 1);
         }
+        accReady[idx] = false;
     }
 }
 
@@ -307,7 +327,10 @@ void Position::make_null() {
     n->move = MOVE_NULL;
     n->checkers = 0;
     stm = !stm;
-    if (NnueActive) nnue_copy(accStack[n - states], accStack[n - states - 1]);
+    if (NnueActive) {   // a null move changes no piece: an empty update is a copy
+        accDelta[n - states].ns = accDelta[n - states].na = 0;
+        accReady[n - states] = false;
+    }
 }
 
 void Position::unmake_null() {

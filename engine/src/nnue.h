@@ -29,6 +29,12 @@ void nnue_refresh(const Position& pos, Accumulator acc);
 void nnue_copy(Accumulator dst, const Accumulator src);
 void nnue_add(Accumulator acc, int piece, int sq);
 void nnue_sub(Accumulator acc, int piece, int sq);
+// dst = src - rows of the removed pieces + rows of the added pieces, in one pass, for both
+// perspectives. This is the per-move update; up to 3 removals and 2 additions (castling with
+// a capture cannot happen, a capture-promotion is 2 + 1).
+void nnue_apply(Accumulator dst, const Accumulator src,
+                const int* subPiece, const int* subSq, int ns,
+                const int* addPiece, const int* addSq, int na);
 // Centipawns from the side to move's point of view.
 int nnue_evaluate(const Position& pos);
 

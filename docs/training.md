@@ -47,6 +47,10 @@ python3 tools/gen_data.py --target 30000000   # a different goal than the defaul
 git pull && make -C engine                # later, Linux: get a newer engine before continuing (old data stays valid)
 ```
 
+Before continuing a run with a newer engine, stop the generator first (Ctrl+C):
+Windows cannot replace `tessera.exe` while it is running. The data already
+generated stays valid and the run continues where it stopped.
+
 What to expect:
 
 - It prints how many positions you have, the speed, and the time left.
