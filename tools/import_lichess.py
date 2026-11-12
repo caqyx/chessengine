@@ -44,16 +44,56 @@ def parse_args():
     return ap.parse_args()
 
 
+class SourceTruncated(Exception):
+    """The compressed file ends in the middle of its data: usually a download that has not finished."""
+
+
+class _ZstdStream:
+    """Decompresses a .zst file frame by frame and notices when the file stops mid-frame
+    (the zstandard reader would otherwise simply report a normal end of file)."""
+
+    def __init__(self, raw):
+        import zstandard
+        self.raw = raw
+        self.dctx = zstandard.ZstdDecompressor(max_window_size=2 ** 31)
+        self.obj = self.dctx.decompressobj()
+        self.fed = False          # current frame has received input
+        self.pending = b""
+
+    def read(self, size):
+        while True:
+            if self.pending:
+                out, self.pending = self.pending[:size], self.pending[size:]
+                return out
+            data = self.raw.read(1 << 20)
+            if not data:
+                if self.fed and not self.obj.eof:
+                    raise SourceTruncated()
+                return b""
+            while data:
+                self.pending += self.obj.decompress(data)
+                self.fed = True
+                if self.obj.eof:          # frame finished: anything left belongs to the next frame
+                    data = self.obj.unused_data
+                    self.obj = self.dctx.decompressobj()
+                    self.fed = bool(data)
+                else:
+                    data = b""
+
+    def close(self):
+        self.raw.close()
+
+
 def open_source(path):
     """A binary stream of the decompressed file."""
     raw = open(path, "rb")
     if not path.endswith(".zst"):
         return raw
     try:
-        import zstandard
+        import zstandard  # noqa: F401
     except ImportError:
         sys.exit("Reading .zst needs the zstandard package:  pip install zstandard")
-    return zstandard.ZstdDecompressor(max_window_size=2 ** 31).stream_reader(raw, read_size=1 << 20)
+    return _ZstdStream(raw)
 
 
 def load_state(out):
@@ -77,7 +117,10 @@ def calibrate(args, state):
     tmp = tempfile.NamedTemporaryFile("wb", delete=False, suffix=".jsonl")
     lines = 0
     while lines < 300_000:
-        block = stream.read(1 << 20)
+        try:
+            block = stream.read(1 << 20)
+        except SourceTruncated:
+            break                       # calibration only needs the start of the file
         if not block:
             break
         lines += block.count(b"\n")
@@ -127,14 +170,24 @@ def main():
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=1 << 20)
     records_before = state["records"]
 
+    truncated = {"flag": False}
+
     def feed():
         stream = open_source(args.source)
+        tail = b""                                     # an unfinished last line is held back
         try:
             while True:
                 block = stream.read(1 << 20)
                 if not block:
+                    if tail:
+                        proc.stdin.write(tail + b"\n")   # the file's last line, without a newline
                     break
-                proc.stdin.write(block)
+                block = tail + block
+                cut = block.rfind(b"\n") + 1
+                tail = block[cut:]
+                proc.stdin.write(block[:cut])
+        except SourceTruncated:
+            truncated["flag"] = True                   # the half line is dropped; the next run reads it whole
         except (BrokenPipeError, OSError, ValueError):
             pass                                       # the engine stopped reading: limit reached or stopped
         finally:
@@ -169,12 +222,20 @@ def main():
                   end="", flush=True)
     proc.wait()
     print()
+    feeder.join(timeout=5)
     if stopped["flag"]:
         print(f"Stopped. {state['records']:,} positions saved; run the same command to continue.")
+    elif truncated["flag"]:
+        print(f"The file ends in the middle of its data: the download is probably not finished.\n"
+              f"{state['records']:,} positions are saved. When the download is complete, run the same command to continue.")
+    elif proc.returncode != 0:
+        print(f"The engine stopped with an error (code {proc.returncode}). {state['records']:,} positions are saved; "
+              "run the same command to continue, and report this if it happens again.")
     else:
         print(f"Done: {state['records']:,} positions in {args.out}.")
+        py = "python" if os.name == "nt" else "python3"
         print("Train with them, for example:")
-        print(f"  python3 tools/train_net.py --data data/round3 {os.path.relpath(args.out, ROOT)} --out nets-lichess")
+        print(f"  {py} {os.path.join('tools', 'train_net.py')} --data {os.path.join('data', 'round3')} {os.path.relpath(args.out, ROOT)} --out nets-lichess")
 
 
 if __name__ == "__main__":
