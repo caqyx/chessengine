@@ -16,11 +16,15 @@ Every opening is played twice with colors swapped, so --games should be even.
 import argparse
 import concurrent.futures
 import math
+import os
+import subprocess
 import threading
 import time
 
 import chess
 import chess.engine
+
+STOP = threading.Event()        # Ctrl+C: games in progress are dropped, the result so far is printed
 
 # Short, varied opening lines (SAN). Both engines get each one with both colors.
 OPENINGS = [
@@ -101,7 +105,9 @@ def play_game(args, opening, e1_white, results, lock, idx):
     outcome, reason = None, ""
     try:
         for p, o in zip(paths, opts):
-            eng = chess.engine.SimpleEngine.popen_uci(p)
+            # Own process group: Ctrl+C reaches only this script, which then stops the engines itself.
+            group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
+            eng = chess.engine.SimpleEngine.popen_uci(p, **group)
             if o:
                 eng.configure(o)
             engines.append(eng)
@@ -112,6 +118,8 @@ def play_game(args, opening, e1_white, results, lock, idx):
         win_streak = [0, 0]
         draw_streak = 0
         while True:
+            if STOP.is_set():
+                return
             if board.is_checkmate():
                 outcome, reason = (0.0 if board.turn == chess.WHITE else 1.0), "mate"
                 break
@@ -163,6 +171,8 @@ def play_game(args, opening, e1_white, results, lock, idx):
             except Exception:
                 pass
     with lock:
+        if STOP.is_set():
+            return                               # stopped by Ctrl+C: this game does not count
         if outcome is None:
             results["errors"] += 1
             print(f"game {idx}: {reason}", flush=True)
@@ -213,10 +223,19 @@ def main():
 
     results = {"w": 0, "d": 0, "l": 0, "errors": 0, "reasons": {}}
     lock = threading.Lock()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency) as pool:
-        for g in range(args.games):
-            opening = OPENINGS[(g // 2) % len(OPENINGS)]
-            pool.submit(play_game, args, opening, g % 2 == 0, results, lock, g + 1)
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency)
+    futures = [pool.submit(play_game, args, OPENINGS[(g // 2) % len(OPENINGS)], g % 2 == 0, results, lock, g + 1)
+               for g in range(args.games)]
+    try:
+        # Waiting in short steps keeps Ctrl+C working (a plain wait would ignore it until every game is played).
+        while not all(f.done() for f in futures):
+            concurrent.futures.wait(futures, timeout=0.5)
+    except KeyboardInterrupt:
+        STOP.set()
+        print("\nStopping: games in progress are not counted ...", flush=True)
+        for f in futures:
+            f.cancel()
+    pool.shutdown(wait=True)
     print(f"\nFinal: +{results['w']} ={results['d']} -{results['l']}  {summary(results)}")
     print("Game endings:", results["reasons"], "errors:", results["errors"])
 
