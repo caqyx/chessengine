@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Generate Tessera self-play training data. Safe to stop and resume at any time.
 
-    python3 tools/gen_data.py            # start, or continue where you stopped
+    python3 tools/gen_data.py                       # start, or continue where you stopped
+    python3 tools/gen_data.py --out data/round3     # a fresh round in its own folder
     Ctrl+C                               # stop; everything finished so far is kept
 
 How it works: several copies of the engine play games against themselves, each
@@ -19,6 +20,7 @@ Needs only Python 3 and the engine binary (build it with:  make -C engine).
 """
 import argparse
 import json
+import secrets
 import os
 import signal
 import subprocess
@@ -52,7 +54,10 @@ class Store:
         os.makedirs(folder, exist_ok=True)
         self.state_path = os.path.join(folder, "state.json")
         self.lock = threading.Lock()
-        self.state = {"next_seed": 1, "games": 0, "positions": 0, "file_index": 1, "file_lines": 0}
+        # A new folder starts at a random seed, so a new round does not replay the openings
+        # (the random first moves) of an earlier round in another folder.
+        self.state = {"next_seed": 1 + secrets.randbelow(2_000_000_000), "games": 0, "positions": 0,
+                      "file_index": 1, "file_lines": 0}
         if os.path.exists(self.state_path):
             with open(self.state_path) as f:
                 self.state.update(json.load(f))

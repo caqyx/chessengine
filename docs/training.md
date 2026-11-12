@@ -64,6 +64,21 @@ What to expect:
 - Each game gives the two sides different random thinking budgets
   (1,000 to 10,000 positions per move), so stronger and weaker players meet.
 
+### Starting a fresh round
+
+Each network makes the engine stronger, and games from a stronger engine are
+better training material. To generate a round with the newest engine without
+mixing it with older games, give it its own folder (stop the generator first,
+then download or build the newest engine):
+
+```bash
+python3 tools/gen_data.py --out data/round3    # new games into their own folder (Windows: data\round3)
+```
+
+A new folder starts from a random seed, so it does not replay the random
+opening moves of earlier rounds. Keep the older folders: whether they help or
+hurt is something to measure, not assume (step 2 shows how).
+
 ## Step 2: train the network (stop and resume freely)
 
 Training runs on the CPU with all threads; no graphics card or Python packages
@@ -95,7 +110,7 @@ python3 tools/train_net.py                # convert the data, then train
 python3 tools/train_net.py                # start, or continue where you stopped
 # Ctrl+C                                  # stop: it saves and exits within a second or two
 python3 tools/train_net.py --fresh        # start over, e.g. after generating a lot more data
-python3 tools/train_net.py --hidden 64    # a smaller network (default 128)
+python3 tools/train_net.py --hidden 128   # a smaller, faster network (default 256, what the engine ships)
 ```
 
 What happens:
@@ -110,15 +125,25 @@ What happens:
 3. Progress is in `nets/checkpoint.bin`. Stopping in the middle of a pass is
    fine; the next run continues from the same step.
 
+### Training on chosen folders
+
+```bash
+python3 tools/train_net.py --data data/round3 --out nets-round3                      # only the new round
+python3 tools/train_net.py --data data data/local data/round3 --out nets-all         # everything
+```
+
+Each selection gets its own converted copy (`data/packed-...`) and its own
+output folder, so both can be trained and then matched against each other.
+
 ### Is the network better? Measure it
 
-The engine keeps using the hand-written evaluation unless told to load a network:
+The engine uses its built-in network unless told to load another one, so this compares your new network (engine 1) with the built-in one (engine 2):
 
 ```bash
 pip install chess                         # match runner dependency (python-chess)
 python3 tools/match.py --e1 engine/tessera --e2 engine/tessera \
     --opt1 "EvalFile=nets/tessera.nnue" --movetime 100 --games 200 --concurrency 4
-# engine 1 = with the network, engine 2 = hand-written; the Elo line is from the network's point of view
+# engine 1 = your new network, engine 2 = the built-in one; the Elo line is from engine 1's point of view
 ```
 
 (On Windows use `engine\tessera.exe` and `nets\tessera.nnue`.)

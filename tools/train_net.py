@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Train Tessera's neural network on the self-play data. Safe to stop and resume.
 
-    python3 tools/train_net.py          # start, or continue where you stopped
-    Ctrl+C                              # stop; progress is saved
+    python3 tools/train_net.py                                  # start, or continue where you stopped
+    python3 tools/train_net.py --data data/round3 --out nets-round3   # only one folder's games
+    Ctrl+C                                                      # stop; progress is saved
 
 What it does:
   1. Converts every data file to the compact form the trainer reads
@@ -32,11 +33,13 @@ EXE = ".exe" if os.name == "nt" else ""
 
 def parse_args():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--hidden", type=int, default=128, help="size of the network's hidden layer (1..256)")
+    ap.add_argument("--hidden", type=int, default=256, help="size of the network's hidden layer (1..256); the engine ships 256")
     ap.add_argument("--epochs", type=int, default=24, help="passes over the data")
     ap.add_argument("--threads", type=int, default=os.cpu_count() or 2)
     ap.add_argument("--out", default=os.path.join(ROOT, "nets"), help="where the network and checkpoint go")
     ap.add_argument("--fresh", action="store_true", help="forget earlier training progress and start over")
+    ap.add_argument("--data", nargs="+", metavar="FOLDER",
+                    help="train only on the data in these folders (default: data and data/local)")
     return ap.parse_args()
 
 
@@ -46,10 +49,10 @@ def need(path, hint):
     return path
 
 
-def sources():
-    """All data files: the compressed ones in the repository and the ones generated locally."""
+def sources(folders):
+    """All data files (*.txt, *.txt.xz) directly inside the given folders."""
     found = []
-    for folder in (os.path.join(ROOT, "data"), os.path.join(ROOT, "data", "local")):
+    for folder in folders:
         if not os.path.isdir(folder):
             continue
         for name in sorted(os.listdir(folder)):
@@ -58,7 +61,7 @@ def sources():
     return found
 
 
-def pack_all(engine, packed_dir):
+def pack_all(engine, packed_dir, folders):
     os.makedirs(packed_dir, exist_ok=True)
     manifest_path = os.path.join(packed_dir, "manifest.json")
     manifest = {}
@@ -66,7 +69,10 @@ def pack_all(engine, packed_dir):
         with open(manifest_path) as f:
             manifest = json.load(f)
     wanted = set()
-    for src in sources():
+    files = sources(folders)
+    if not files:
+        sys.exit("No data files (*.txt or *.txt.xz) in: " + ", ".join(os.path.relpath(f, ROOT) for f in folders))
+    for src in files:
         name = os.path.basename(src).replace(".txt.xz", "").replace(".txt", "") + ".bin"
         out = os.path.join(packed_dir, name)
         wanted.add(name)
@@ -104,8 +110,14 @@ def main():
     args = parse_args()
     engine = need(os.path.join(ROOT, "engine", "tessera" + EXE), "Build it:  make -C engine   (Windows: see docs/training.md)")
     trainer = need(os.path.join(ROOT, "engine", "trainer" + EXE), "Build it:  make -C engine trainer   (Windows: see docs/training.md)")
-    packed = os.path.join(ROOT, "data", "packed")
-    pack_all(engine, packed)
+    if args.data:
+        folders = [os.path.abspath(f) for f in args.data]
+        # A separate packed folder per selection, so switching between selections never repacks.
+        packed = os.path.join(ROOT, "data", "packed-" + "-".join(os.path.basename(f.rstrip("/\\")) for f in folders))
+    else:
+        folders = [os.path.join(ROOT, "data"), os.path.join(ROOT, "data", "local")]
+        packed = os.path.join(ROOT, "data", "packed")
+    pack_all(engine, packed, folders)
     if args.fresh and os.path.isdir(args.out):
         for name in ("checkpoint.bin", "tessera.nnue"):
             path = os.path.join(args.out, name)
@@ -122,7 +134,7 @@ def main():
     if code == 0 and os.path.exists(net):
         rel = os.path.relpath(net, ROOT)
         print(f"\nNetwork: {rel}")
-        print("Compare it with the hand-written evaluation (needs: pip install chess):")
+        print("Compare it with the network built into the engine (needs: pip install chess):")
         print(f'  python3 tools/match.py --e1 engine/tessera{EXE} --e2 engine/tessera{EXE} --opt1 "EvalFile={rel}" --movetime 100 --games 200 --concurrency 4')
     sys.exit(code)
 

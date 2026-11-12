@@ -10,3 +10,6 @@ engine/trainer
 engine/*.exe
 data/packed/
 nets/
+data/round*/
+data/packed-*/
+nets-*/
