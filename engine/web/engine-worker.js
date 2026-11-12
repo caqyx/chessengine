@@ -40,12 +40,31 @@ self.onmessage = (event) => {
   else pending.push(line);
 };
 
-fetch(new URL('engine.wasm', self.location.href))
-  .then((response) => {
-    if (!response.ok) throw new Error('engine.wasm HTTP ' + response.status);
-    return response.arrayBuffer();
-  })
-  .then((bytes) => WebAssembly.instantiate(bytes, imports))
+// A tiny module that uses one SIMD instruction: it validates only where SIMD is supported.
+const SIMD_PROBE = new Uint8Array([
+  0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11,
+]);
+
+function hasSimd() {
+  try {
+    return WebAssembly.validate(SIMD_PROBE);
+  } catch (err) {
+    return false;
+  }
+}
+
+function load(file) {
+  return fetch(new URL(file, self.location.href))
+    .then((response) => {
+      if (!response.ok) throw new Error(file + ' HTTP ' + response.status);
+      return response.arrayBuffer();
+    })
+    .then((bytes) => WebAssembly.instantiate(bytes, imports));
+}
+
+// engine.wasm is the faster SIMD build; engine-nosimd.wasm runs everywhere. If the fast
+// one cannot be used for any reason, try the plain one before giving up.
+(hasSimd() ? load('engine.wasm').catch(() => load('engine-nosimd.wasm')) : load('engine-nosimd.wasm'))
   .then((result) => {
     wasm = result.instance.exports;
     wasm.init();

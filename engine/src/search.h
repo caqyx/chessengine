@@ -30,6 +30,7 @@ int search_param_value(int i);
 void search_param_set(int i, int value);
 #endif
 
+int static_eval(const Position& pos);   // network or hand-written evaluation, side to move's view
 void search_init();
 void search_clear();                 // forget everything learned (new game)
 bool search_set_level(int level);    // 1..10, 10 = full strength; returns true if it changed

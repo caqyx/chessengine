@@ -161,8 +161,17 @@ static inline int quiet_history(const Position& pos, const Stack* ss, Move m) {
     return MainHist[pos.stm][from_sq(m)][to] + (*(ss - 1)->ch)[pc][to] + (*(ss - 2)->ch)[pc][to] + (*(ss - 4)->ch)[pc][to] / 2;
 }
 
+// The evaluation the search uses: the network when one is loaded, except for mating a bare
+// king without pawns, where the hand-written rules (drive the king to the edge, the right
+// corner for bishop + knight) are exact knowledge the network was never shown enough of.
+int static_eval(const Position& pos) {
+    if (!NnueActive) return evaluate(pos);
+    if (!pos.pieces(PAWN) && (pos.st->npm[WHITE] == 0 || pos.st->npm[BLACK] == 0)) return evaluate(pos);
+    return nnue_evaluate(pos);
+}
+
 static inline int raw_eval(const Position& pos) {
-    int v = (NnueActive ? nnue_evaluate(pos) : evaluate(pos)) * EvalScale / 100;
+    int v = static_eval(pos) * EvalScale / 100;
     if (NoiseAmp) {   // weakened levels: deterministic per-position noise
         u64 h = (pos.st->key ^ NoiseSeed) * 0x9E3779B97F4A7C15ULL;
         v += (int)((h >> 40) % (u64)(2 * NoiseAmp + 1)) - NoiseAmp;

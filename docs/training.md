@@ -137,3 +137,21 @@ even more. With the default settings and only 7 million positions the network
 is already level with the hand-written evaluation, so with 30 to 40 million it
 has a good chance of passing it. The match above is what decides; if it is
 still behind, generate more (step 1) and train again with `--fresh`.
+
+## Step 3: put a better network into the engine
+
+The engine ships with the network in `engine/net/tessera.nnue`. To replace it
+with one you trained and measured to be stronger:
+
+```bash
+python3 tools/embed_net.py nets/tessera.nnue   # copy it to engine/net/ and regenerate engine/src/net_data.h
+make -C engine && make -C engine wasm          # rebuild the native engine and both browser builds (needs clang for wasm)
+git add engine/net engine/src/net_data.h engine/web && git commit -m "New network" && git push   # publish; GitHub rebuilds tessera.exe
+```
+
+On Windows without a compiler, run the first line with `python tools\embed_net.py nets\tessera.nnue`,
+commit and push `engine/net` and `engine/src/net_data.h`; the browser builds then
+have to be rebuilt on a machine with clang.
+
+After a new network is in, newly generated games (step 1) are played with it,
+so each round of generate, train, measure starts from a stronger player.

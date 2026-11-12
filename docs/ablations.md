@@ -167,6 +167,25 @@ Within a few points everywhere, with too few draws predicted near equality and
 too many when one side is clearly ahead. The chances describe Tessera playing
 itself at fast speed, not a human game.
 
+## Neural-network evaluation
+
+Network: 768 inputs, 128 hidden units per side, one output. Target: 80% the
+engine's search score, 20% the game result. Opponent in every row: the same
+engine with the hand-written evaluation.
+
+| Training data | Match | Games | W-D-L | Elo for the network |
+|---|---|---|---|---|
+| 7.07 million positions | 20,000 nodes per move | 300 | 93-105-102 | -10 [-42, +21] |
+| 7.07 million, twice the passes | 20,000 nodes per move | 300 | 99-105-96 | +3 [-28, +35] |
+| 7.07 million | 100,000 nodes per move | 200 | 56-88-56 | 0 [-36, +36] |
+| 39.7 million (shipped) | 100 ms per move, on the owner's PC | 200 | 70-97-33 | +65 [+31, +100] |
+| 39.7 million (shipped) | 20,000 nodes per move | 300 | 171-72-57 | +139 [+104, +177] |
+
+The gain is smaller at equal time than at equal nodes because the network is
+slower to evaluate: about 1.67 million nodes per second against 2.17 million.
+With other targets the 7-million network was much weaker (half result, half
+score: -147; score only: -56), see `docs/training.md`.
+
 ## What these numbers do not say
 
 They compare Tessera with itself. They say nothing about absolute strength;

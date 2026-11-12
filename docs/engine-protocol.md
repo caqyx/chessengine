@@ -12,7 +12,7 @@ game/js/engine-client.js  --postMessage(string)-->  engine/web/engine-worker.js 
 
 - URL: `engine/web/engine-worker.js` (relative to the site root, where `index.html` lives).
 - Classic worker (`new Worker(url)`), not a module worker.
-- It fetches `engine.wasm` from its own directory. Commands sent before the
+- It fetches `engine.wasm` (SIMD build) from its own directory, or `engine-nosimd.wasm` when the browser has no WebAssembly SIMD or the first one fails to load. Commands sent before the
   wasm is ready are queued, so the client may start sending immediately.
 - If the wasm fails to load the worker posts a single line: `error <message>`.
 
@@ -69,6 +69,12 @@ changes before it finishes.
 `Level` 1..9 weaken the engine (shallower search plus evaluation noise). The
 level only changes strength; the time the engine spends is still controlled by
 the `go` command, so the game can use short `movetime` values on low levels.
+
+## Evaluation
+
+The network is compiled into the wasm, so the game sends nothing for it.
+`setoption name Use NNUE value false` switches to the hand-written evaluation;
+`EvalFile` exists only in the native build.
 
 ## Other options
 

@@ -6,6 +6,7 @@
 #include "eval.h"
 #include "tt.h"
 #include "platform.h"
+#include "net_data.h"
 
 #ifndef DEFAULT_HASH_MB
 #define DEFAULT_HASH_MB 64
@@ -20,6 +21,7 @@ void engine_init() {
     eval_init();
     search_init();
     tt_resize(DEFAULT_HASH_MB);
+    nnue_load(DefaultNet, sizeof(DefaultNet));   // the built-in network; without it the hand-written evaluation is used
     Pos.set(StartFen);
 }
 
@@ -348,7 +350,7 @@ void uci_command(const char* line) {
         plat_out(b.b);
         plat_out("option name Level type spin default 10 min 1 max 10");
         plat_out("option name Move Overhead type spin default 10 min 0 max 5000");
-        plat_out("option name EvalFile type string default <empty>");
+        plat_out("option name EvalFile type string default <built-in>");
         plat_out("option name Use NNUE type check default true");
         plat_out(ShowWdl ? "option name UCI_ShowWDL type check default true"
                          : "option name UCI_ShowWDL type check default false");
@@ -377,7 +379,7 @@ void uci_command(const char* line) {
     else if (str_eq(t.tok, "datagen")) cmd_datagen(t);
     else if (str_eq(t.tok, "eval")) {
         StrBuf b;
-        b.add("eval "); b.add_int(NnueActive ? nnue_evaluate(Pos) : evaluate(Pos));
+        b.add("eval "); b.add_int(static_eval(Pos));
         b.add(NnueActive ? " cp (side to move, network)" : " cp (side to move, hand-written)");
         plat_out(b.b);
     } else if (str_eq(t.tok, "d")) {

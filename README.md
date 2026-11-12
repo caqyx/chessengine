@@ -3,7 +3,7 @@
 A chess game for the browser and the chess engine it plays against, both written from scratch.
 
 - **Game** (`index.html`, `game/`): plain HTML/CSS/JS, no build step, no dependencies. Play against the engine or a second person, with clocks, move list, takebacks, an analysis mode (eval bar, best-move arrow, engine line) and FEN/PGN import and export.
-- **Engine** (`engine/`): Tessera, a C++17 alpha-beta engine. One code base builds a native UCI binary (for GUIs and testing) and a 76 kB WebAssembly module that runs inside the page in a Web Worker.
+- **Engine** (`engine/`): Tessera, a C++17 alpha-beta engine with a neural-network evaluation trained on its own games. One code base builds a native UCI binary (for GUIs and testing) and a 290 kB WebAssembly module that runs inside the page in a Web Worker.
 
 ## Play
 
@@ -19,7 +19,7 @@ python3 -m http.server 8000   # serve the repo root; a file:// URL cannot load t
 ```bash
 cd engine
 make              # native UCI binary -> engine/tessera   (g++ or clang++)
-make wasm         # WebAssembly build -> engine/web/engine.wasm   (clang with wasm32 target + wasm-ld)
+make wasm         # WebAssembly builds -> engine/web/engine.wasm (SIMD) and engine-nosimd.wasm   (clang with wasm32 target + wasm-ld)
 make test         # perft from the start position + internal consistency self-test
 make tessera-tune # same engine with search thresholds as UCI options (SP_*), for match tests
 ./tessera bench   # fixed-depth search over 12 positions; node count must match between builds
@@ -27,7 +27,7 @@ make tessera-tune # same engine with search thresholds as UCI options (SP_*), fo
 
 The wasm build needs no emscripten and no libc: the engine core is freestanding C++ and imports only two functions from JavaScript (print a line, read the clock). `engine/web/engine.wasm` is committed so the site works without building anything.
 
-Use the native binary in any UCI GUI (Cute Chess, Arena, En Croissant, ...). Options: `Hash` (MB), `Level` (1-10, 10 = full strength), `Move Overhead` (ms).
+Use the native binary in any UCI GUI (Cute Chess, Arena, En Croissant, ...). Options: `Hash` (MB), `Level` (1-10, 10 = full strength), `Move Overhead` (ms), `EvalFile` (load another network), `Use NNUE` (false = hand-written evaluation).
 
 ## How the engine works
 
@@ -49,17 +49,17 @@ Use the native binary in any UCI GUI (Cute Chess, Arena, En Croissant, ...). Opt
 | Singular extensions | extends the hash move when everything else is clearly worse; multi-cut when it is not |
 | Correction history | learns per pawn structure how far the static eval was off and corrects it |
 
-**Evaluation.** Hand-crafted, tapered between middlegame and endgame: material and piece-square tables (PeSTO), pawn structure (isolated, doubled, connected, passed; cached in a pawn hash), mobility, outposts, rooks on open files, bishop pair, king safety (pawn shelter plus an attack-unit danger model with safe checks), passed-pawn advancement and king distance, threats, and endgame scaling for drawish material (opposite bishops, no pawns, KBN-K corner knowledge).
+**Hand-written evaluation** (the fallback, and what the network learned from). Tapered between middlegame and endgame: material and piece-square tables (PeSTO), pawn structure (isolated, doubled, connected, passed; cached in a pawn hash), mobility, outposts, rooks on open files, bishop pair, king safety (pawn shelter plus an attack-unit danger model with safe checks), passed-pawn advancement and king distance, threats, and endgame scaling for drawish material (opposite bishops, no pawns, KBN-K corner knowledge).
 
 **Tuning.** The weights in `engine/src/eval_params.h` are not hand-picked: `tessera datagen` plays self-play games and writes out quiet positions with the search score and the game result, and `tools/tuner.cpp` fits the weights so that the evaluation predicts those results (Texel tuning: logistic regression by gradient descent, validated on games it never trained on). It covers piece-square tables, mobility, pawn structure, threats and the king-safety weights. Two rounds on about 50,000 games (stored in `data/`) each gained clearly at small search budgets and less at larger ones; the measurements are in `docs/ablations.md`.
 
-**Neural network (experimental).** The engine can replace the hand-written evaluation with a small network (768 inputs, one hidden layer kept up to date move by move, one output; `engine/src/nnue.cpp`) loaded with `setoption name EvalFile value <file>`. It is trained only on Tessera's own games by `tools/trainer.cpp`. No network ships yet: trained on the 7 million scored positions in `data/` it is level with the hand-written evaluation (three matches: -10, +3 and 0 Elo, each within about +/-35), so it needs more data to pull ahead (`docs/training.md`).
+**Neural network.** The engine's default evaluation is a small network (768 inputs, one 128-unit hidden layer kept up to date move by move, one output; `engine/src/nnue.cpp`). It was trained only on Tessera's own games: 39.7 million positions of self-play, fitted by `tools/trainer.cpp` to predict 80% the engine's own search score and 20% the game result. The weights are in `engine/net/tessera.nnue` and compiled in. Against the hand-written evaluation it scored +65 Elo [+31, +100] over 200 games at 100 ms per move and +139 Elo [+104, +177] over 300 games at 20,000 nodes per move. The hand-written evaluation is still in the engine (`setoption name Use NNUE value false`) and is still used for mating a bare king. How to train a new network: `docs/training.md`.
 
 **Levels.** Levels 1-9 cap the search depth and add deterministic per-position noise to the evaluation, so weaker levels make plausible human-like mistakes instead of random moves.
 
 ## Strength, honestly
 
-Tessera is not stronger than Stockfish and will not be. Stockfish is the product of well over a decade of work by many contributors, a distributed testing fleet that plays millions of games per change, and neural-network evaluation trained on billions of positions. Tessera is a classical engine with hand-set evaluation weights. It plays far above human level, but the realistic comparison is against Stockfish with its strength limited (`UCI_LimitStrength`).
+Tessera is not stronger than Stockfish and will not be. Stockfish is the product of well over a decade of work by many contributors, a distributed testing fleet that plays millions of games per change, and neural-network evaluation trained on billions of positions. Tessera is a small engine whose network was trained on a few tens of millions of its own positions. It plays far above human level, but the realistic comparison is against Stockfish with its strength limited (`UCI_LimitStrength`).
 
 Measure it yourself:
 
@@ -100,6 +100,8 @@ tools/match.py             engine-vs-engine match runner
 tools/tuner.cpp            fits the evaluation weights to self-play games
 tools/gen_data.py          generates self-play data on your own machine, stop and resume freely (docs/training.md)
 tools/train_net.py         trains the neural-network evaluation on that data (wraps tools/trainer.cpp)
+tools/embed_net.py         compiles a trained network into the engine
+engine/net/tessera.nnue    the network the engine ships with
 tools/fit_wdl.py           fits the win/draw/loss model shown in the game
 data/                      4 million self-play positions with scores and results
 ```

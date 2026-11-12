@@ -17,7 +17,7 @@
 //
 // Build and run (from the repo root):
 //   g++ -O3 -std=c++17 -DTUNE -Iengine/src tools/tuner.cpp engine/src/bitboard.cpp \
-//       engine/src/position.cpp engine/src/movegen.cpp engine/src/eval.cpp -o /tmp/tuner
+//       engine/src/position.cpp engine/src/movegen.cpp engine/src/eval.cpp engine/src/nnue.cpp -o /tmp/tuner
 //   ./engine/tessera datagen 5000 5000 1 > /tmp/data.txt     # self-play positions
 //   /tmp/tuner /tmp/data.txt engine/src/eval_params.h         # rewrites the weights
 // Lines are "fen;result" or "fen;score;result"; several data files may be concatenated.
