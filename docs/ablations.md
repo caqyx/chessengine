@@ -181,6 +181,14 @@ engine with the hand-written evaluation.
 | 39.7 million (shipped) | 100 ms per move, on the owner's PC | 200 | 70-97-33 | +65 [+31, +100] |
 | 39.7 million (shipped) | 20,000 nodes per move | 300 | 171-72-57 | +139 [+104, +177] |
 
+| ~60 million, 256 hidden (shipped) vs the 39.7M 128-hidden network | 100 ms per move, owner's PC, slow output path | 200 | 37-112-51 | -24 [-57, +7] |
+| same | 2,000 nodes per move, owner's PC | 200 | 82-72-46 | +63 [+25, +103] |
+| same | 100 ms per move, after the output-path fix | 200 | 54-118-28 | +45 [+15, +77] |
+
+The first 256 test lost at equal time only because a weight of 150 (limit 128
+for the 16-bit vector path) sent it to the scalar fallback, 1.8x slower than
+the 128 network. With a 32-bit vector path it is 5-10% slower, and wins.
+
 The gain is smaller at equal time than at equal nodes because the network is
 slower to evaluate: about 1.67 million nodes per second against 2.17 million.
 With other targets the 7-million network was much weaker (half result, half
