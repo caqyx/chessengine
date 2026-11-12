@@ -3,6 +3,7 @@
 
     python3 tools/gen_data.py                       # start, or continue where you stopped
     python3 tools/gen_data.py --out data/round3     # a fresh round in its own folder
+    python3 tools/gen_data.py --net nets/tessera.nnue   # play with a network file instead of the built-in one
     Ctrl+C                               # stop; everything finished so far is kept
 
 How it works: several copies of the engine play games against themselves, each
@@ -43,7 +44,13 @@ def parse_args():
     ap.add_argument("--nodes", type=int, default=5000, help="average search budget per move")
     ap.add_argument("--batch", type=int, default=100, help="games per batch")
     ap.add_argument("--same-strength", action="store_true", help="both sides get exactly --nodes (default: random per side)")
-    return ap.parse_args()
+    ap.add_argument("--net", help="play with this network file instead of the one built into the engine")
+    args = ap.parse_args()
+    if args.net:
+        args.net = os.path.abspath(args.net)
+        if not os.path.isfile(args.net):
+            sys.exit(f"Network file not found: {args.net}")
+    return args
 
 
 class Store:
@@ -114,13 +121,34 @@ class Store:
             return self.state["positions"]
 
 
-def check_engine(path):
+NET_FAILED = "could not load network file"
+
+
+def engine_job(engine, net, datagen_args):
+    """The command line and the input for one engine run. With a network file the commands go
+    through the engine's input: load the network first, then generate, then quit."""
+    if not net:
+        return [engine, "datagen", *datagen_args], None
+    # The engine reads words of at most 127 characters, so a long absolute path is given relative
+    # to the current folder (which the engine shares) when that is shorter.
+    try:
+        short = os.path.relpath(net)
+    except ValueError:                     # another drive on Windows
+        short = net
+    script = f"setoption name EvalFile value {min(net, short, key=len)}\ndatagen {' '.join(datagen_args)}\nquit\n"
+    return [engine], script
+
+
+def check_engine(path, net):
     if not os.path.exists(path):
         sys.exit(f"Engine not found at {path}\nBuild it first:  make -C engine")
+    cmd, script = engine_job(path, net, ["1", "300", "1", "mix"])
     try:
-        out = subprocess.run([path, "datagen", "1", "300", "1", "mix"], capture_output=True, text=True, timeout=120).stdout
+        out = subprocess.run(cmd, input=script, capture_output=True, text=True, timeout=120).stdout
     except (OSError, subprocess.TimeoutExpired) as exc:
         sys.exit(f"Could not run the engine: {exc}")
+    if NET_FAILED in out:
+        sys.exit(f"The engine could not load the network file {net}")
     lines = [l for l in out.splitlines() if l.count(";") == 2]
     if not lines:
         sys.exit("This engine binary has no working 'datagen' command. Rebuild it from the current sources.")
@@ -132,15 +160,19 @@ def worker(args, store, stop, running, stats):
             stop.set()
             break
         seed = store.take_seed()
-        cmd = [args.engine, "datagen", str(args.batch), str(args.nodes), str(seed)]
-        if not args.same_strength:
-            cmd.append("mix")
+        datagen_args = [str(args.batch), str(args.nodes), str(seed)] + ([] if args.same_strength else ["mix"])
+        cmd, script = engine_job(args.engine, args.net, datagen_args)
         # A new process group, so Ctrl+C reaches only this script and it can shut the engines down cleanly.
         extra = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, **extra)
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE if script else subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL, text=True, **extra)
         with running["lock"]:
             running["procs"].add(proc)
-        out, _ = proc.communicate()
+        try:
+            out, _ = proc.communicate(script)
+        except OSError:                            # killed while its input was being written (Ctrl+C)
+            out = ""
+            proc.wait()
         with running["lock"]:
             running["procs"].discard(proc)
         if stop.is_set() or proc.returncode != 0:
@@ -160,7 +192,7 @@ def format_duration(seconds):
 
 def main():
     args = parse_args()
-    check_engine(args.engine)
+    check_engine(args.engine, args.net)
     store = Store(args.out)
     stop = threading.Event()
     running = {"lock": threading.Lock(), "procs": set()}
@@ -183,6 +215,8 @@ def main():
 
     have = store.state["positions"]
     print(f"Data folder: {args.out}")
+    if args.net:
+        print(f"Network: {args.net}")
     print(f"Already have {have:,} positions from {store.state['games']:,} games. Target {args.target:,}.")
     if have >= args.target:
         print("Target reached. Raise it with --target to generate more.")

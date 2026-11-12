@@ -203,6 +203,65 @@ What the import does:
 Import speed was about 530,000 lines per second in testing (one thread), so
 the whole file takes roughly 15 to 20 minutes.
 
+## Automatic: the self-improvement loop (stop and resume freely)
+
+`tools/loop.py` runs steps 1, 2 and the measurement on its own, round after
+round, for as long as you let it:
+
+1. **generate**: the best network so far plays games against itself
+   (40 million positions per round, the same 5,000-node games as before);
+2. **pack**: the new games are converted to training records, once;
+3. **train**: a new network learns from scratch from the two newest rounds
+   (so each network sees about 80 million positions while each round only has
+   to play 40 million new ones);
+4. **gate**: new network vs best network, 40,000 nodes per move, every pair
+   of games from its own balanced opening with colors swapped. The match stops
+   as soon as it is statistically clear (SPRT: is the new one at least 10 Elo
+   better, or not better), usually after a few hundred to a few thousand games;
+5. **promote**: only a network that wins the gate becomes the new best one and
+   plays the next round. A network that does not is dropped; the round gets
+   20 million more positions and the network is trained again.
+
+So the engine can only get stronger: nothing replaces the best network without
+beating it first. On a fast 8-core/16-thread PC one round takes roughly 3 to
+3.5 hours (about 2.5 h games, 30 min training, a few minutes of match).
+
+```powershell
+python tools\loop.py --first-data data\round3   # first start: reuse the round-3 games (already played by the current network)
+python tools\loop.py                            # every later start: continues exactly where it stopped
+# Ctrl+C                                        # stop at any moment; closing the window or a power cut is also fine
+python tools\loop.py --status                   # best network so far, current step, every gate result, time per step
+python tools\loop.py --rounds 1                 # stop by itself after the next gate match
+python tools\loop.py --extra-data data\lichess  # also learn from the Lichess positions (give --extra-data alone to remove it)
+python tools\loop.py --threads 12               # leave some CPU free for other work
+```
+
+On Linux use `python3 tools/loop.py` and forward slashes.
+
+- Everything goes into `loop/` (ignored by git). The networks are
+  `loop/nets/v01.nnue` (the one you started with), `v02.nnue`, ...; the newest
+  best one is also copied to `loop/best.nnue`. `loop/log.txt` records every
+  promotion and rejection.
+- Settings you give are remembered, so later starts need no options. See all
+  of them with `python tools\loop.py --help`.
+- Each step continues where it stopped: games keep every finished batch,
+  training continues from the pass it was in, the gate match keeps every
+  finished pair of games.
+- Disk: about 6 GB per round (games as text plus training records). Folders of
+  rounds older than the newest two (`loop/v01`, ...) are no longer used and can
+  be deleted; keep `loop/nets`.
+- Memory: training holds all its positions in RAM, about 76 bytes each
+  (80 million = 6 GB). The loop prints the estimate before training starts.
+- It uses `engine\tessera.exe` and `engine\trainer.exe` as they are; no new
+  download or rebuild is needed between rounds, because the engine loads each
+  network from its file.
+- To start with a different network (for example one trained with the
+  Lichess data that won its match), give it on the first start:
+  `python tools\loop.py --best nets-lichess\tessera.nnue`. Without
+  `--first-data` the first round then plays its own games with that network.
+- To put the best network into the engine and the website, use step 3 with
+  `loop/best.nnue`.
+
 ## Step 3: put a better network into the engine
 
 The engine ships with the network in `engine/net/tessera.nnue`. To replace it
