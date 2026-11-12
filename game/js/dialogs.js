@@ -117,6 +117,7 @@ export function createImportDialog(dialog, onSubmit) {
 export function createMenuDialog(dialog, onAction) {
   const legal = dialog.querySelector('[data-action="toggle-legal"]');
   const winChance = dialog.querySelector('[data-action="toggle-winchance"]');
+  const sound = dialog.querySelector('[data-action="toggle-sound"]');
   const theme = dialog.querySelector('[data-action="toggle-theme"]');
 
   function setSwitch(button, on) {
@@ -124,9 +125,10 @@ export function createMenuDialog(dialog, onAction) {
     button.querySelector('.menu-state').textContent = on ? 'On' : 'Off';
   }
 
-  function reflect({ showLegalMoves, winChance: winChanceOn, darkTheme }) {
+  function reflect({ showLegalMoves, winChance: winChanceOn, sound: soundOn, darkTheme }) {
     setSwitch(legal, showLegalMoves);
     setSwitch(winChance, winChanceOn);
+    setSwitch(sound, soundOn);
     setSwitch(theme, darkTheme);
   }
 
@@ -140,7 +142,7 @@ export function createMenuDialog(dialog, onAction) {
   });
 
   return {
-    /** @param {{showLegalMoves: boolean, winChance: boolean, darkTheme: boolean}} state */
+    /** @param {{showLegalMoves: boolean, winChance: boolean, sound: boolean, darkTheme: boolean}} state */
     open(state) {
       reflect(state);
       openModal(dialog);

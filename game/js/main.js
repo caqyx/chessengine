@@ -10,6 +10,7 @@ import { createPanelView } from './panel-view.js';
 import { createController } from './controller.js';
 import { createImportDialog, createMenuDialog, createNewGameDialog, isAnyDialogOpen } from './dialogs.js';
 import { ENGINE_WORKER_URL, EngineClient, STUB_WORKER_URL } from './engine-client.js';
+import { createSound } from './sound.js';
 
 const TOAST_MS = 2200;
 const PROBE_HASH_MB = 8;
@@ -138,6 +139,10 @@ function createMenuActions(controller, dialogs, toast) {
       controller.toggleWinChance();
       dialogs.menu.reflect(controller.menuState());
     },
+    'toggle-sound': () => {
+      controller.toggleSound();
+      dialogs.menu.reflect(controller.menuState());
+    },
     'toggle-theme': () => {
       controller.toggleTheme();
       dialogs.menu.reflect(controller.menuState());
@@ -167,7 +172,7 @@ function start() {
     moves: createMoveListView(byId('moves'), { onSelect: (ply) => controller.goTo(ply) }),
     panel: createPanelView(),
   };
-  controller = createController({ views, engine, probeEngine, toast, applyTheme });
+  controller = createController({ views, engine, probeEngine, toast, applyTheme, sound: createSound() });
 
   const dialogs = {};
   const menuActions = createMenuActions(controller, dialogs, toast);

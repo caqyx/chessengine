@@ -91,7 +91,7 @@ function delay(ms) {
  * @param {(message: string) => void} deps.toast
  * @param {(theme: 'auto'|'light'|'dark') => boolean} deps.applyTheme  returns true when dark is shown
  */
-export function createController({ views, engine, probeEngine, toast, applyTheme }) {
+export function createController({ views, engine, probeEngine, toast, applyTheme, sound }) {
   const settings = loadSettings();
   const clock = createClock({ onTick: renderClocks, onFlag: handleFlag });
 
@@ -122,6 +122,12 @@ export function createController({ views, engine, probeEngine, toast, applyTheme
   let engineNotice = '';
   let renderQueued = false;
   let darkTheme = applyTheme(settings.theme);
+  /** The user's markings on the shown position (right mouse button): { arrows, squares }. */
+  let marks = { arrows: [], squares: [] };
+  let markPreview = null;
+  /** Sides whose low-time warning has sounded; cleared when that clock is above the limit again. */
+  const lowTimeWarned = { w: false, b: false };
+  sound.setEnabled(settings.sound);
 
   // -- engine tasks -------------------------------------------------------------
 
@@ -326,6 +332,7 @@ export function createController({ views, engine, probeEngine, toast, applyTheme
     selected = null;
     views.board.cancelPromotion();
     commit();
+    sound.play('end');
   }
 
   // -- saving -----------------------------------------------------------------------
@@ -425,6 +432,8 @@ export function createController({ views, engine, probeEngine, toast, applyTheme
       selected: shownSelection,
       targets: shownSelection && settings.showLegalMoves ? targetsOf(shownSelection) : [],
       arrows: shownArrows(),
+      marks,
+      markPreview,
       interactive: movable,
     };
   }
@@ -551,6 +560,7 @@ export function createController({ views, engine, probeEngine, toast, applyTheme
 
   function renderClocks(remaining) {
     if (!game?.clocks) return;
+    checkLowTime(remaining);
     const over = outcome(game);
     const bottom = settings.flipped ? 'b' : 'w';
     views.panel.renderClocks(clockModel(otherColor(bottom), remaining, over), clockModel(bottom, remaining, over));
@@ -560,10 +570,57 @@ export function createController({ views, engine, probeEngine, toast, applyTheme
 
   function finishMove(mover) {
     selected = null;
+    clearMarks(false);
     forgetHint();
     disarmResign();
     clockAfterMove(mover);
     commit();
+    sound.playMove(game.moves[game.moves.length - 1]);
+    if (outcome(game)) sound.play('end');
+  }
+
+  // -- markings (right mouse button) -----------------------------------------------------
+
+  /** Forgets all markings; they belong to the position shown, so any change of it clears them. */
+  function clearMarks(redraw = true) {
+    const had = marks.arrows.length > 0 || marks.squares.length > 0 || markPreview;
+    marks = { arrows: [], squares: [] };
+    markPreview = null;
+    if (had && redraw) render();
+  }
+
+  function toggleMark(from, to) {
+    if (from === to) {
+      const squares = marks.squares.filter((square) => square !== from);
+      marks = { ...marks, squares: squares.length === marks.squares.length ? [...squares, from] : squares };
+    } else {
+      const arrows = marks.arrows.filter((arrow) => arrow.from !== from || arrow.to !== to);
+      marks = { ...marks, arrows: arrows.length === marks.arrows.length ? [...arrows, { from, to }] : arrows };
+    }
+    render();
+  }
+
+  function previewMark(from, to) {
+    const next = to ? { from, to } : null;
+    if (next?.from === markPreview?.from && next?.to === markPreview?.to) return;
+    markPreview = next;
+    render();
+  }
+
+  function checkLowTime(remaining) {
+    const over = outcome(game);
+    for (const color of ['w', 'b']) {
+      const low = remaining[color] > 0 && remaining[color] <= LOW_TIME_MS;
+      if (!low) {
+        lowTimeWarned[color] = false;
+        continue;
+      }
+      const mine = game.mode !== 'engine' || color === game.humanColor;
+      if (!lowTimeWarned[color] && mine && !over && game.chess.turn() === color) {
+        lowTimeWarned[color] = true;
+        sound.play('lowtime');
+      }
+    }
   }
 
   /** Asks for the promotion piece when needed; resolves to undefined for ordinary moves. */
@@ -606,6 +663,8 @@ export function createController({ views, engine, probeEngine, toast, applyTheme
     probe = { key: null };
     chances = [];
     lastChances = null;
+    clearMarks(false);
+    lowTimeWarned.w = lowTimeWarned.b = false;
     forgetHint();
     disarmResign();
     if (engineNotice !== NOTICE_STUB && engineNotice !== NOTICE_NO_ENGINE) engineNotice = '';
@@ -632,10 +691,14 @@ export function createController({ views, engine, probeEngine, toast, applyTheme
 
   /** Shows the position after `ply` moves (review); the latest ply is the live game. */
   function goTo(ply) {
+    const before = viewedPly(game);
     setViewPly(game, ply);
+    const after = viewedPly(game);
+    if (after !== before) clearMarks(false);
     selected = null;
     views.board.cancelPromotion();
     commit();
+    if (after === before + 1) sound.playMove(game.moves[after - 1]);
   }
 
   // -- public: intents ---------------------------------------------------------------------
@@ -666,6 +729,9 @@ export function createController({ views, engine, probeEngine, toast, applyTheme
         render();
       },
       move: movePiece,
+      clearMarks: () => clearMarks(true),
+      previewMark,
+      toggleMark,
     },
 
     goTo,
@@ -679,6 +745,7 @@ export function createController({ views, engine, probeEngine, toast, applyTheme
       views.board.cancelPromotion();
       takeBack(game, plies);
       selected = null;
+      clearMarks(false);
       forgetHint();
       disarmResign();
       syncClockToGame();
@@ -712,6 +779,7 @@ export function createController({ views, engine, probeEngine, toast, applyTheme
       selected = null;
       forgetHint();
       commit();
+      sound.play('end');
     },
 
     toggleAnalysis() {
@@ -738,6 +806,7 @@ export function createController({ views, engine, probeEngine, toast, applyTheme
       settings.flipped = options.mode === 'engine' && humanColor === 'b';
       saveSettings(settings);
       replaceGame(createGame({ ...options, humanColor }));
+      sound.play('start');
     },
 
     /** Options to preselect in the New game dialog. */
@@ -796,6 +865,13 @@ export function createController({ views, engine, probeEngine, toast, applyTheme
       commit();
     },
 
+    toggleSound() {
+      settings.sound = !settings.sound;
+      saveSettings(settings);
+      sound.setEnabled(settings.sound);
+      if (settings.sound) sound.play('move');   // a sample, so the switch is audible
+    },
+
     toggleTheme() {
       settings.theme = darkTheme ? 'light' : 'dark';
       saveSettings(settings);
@@ -808,7 +884,7 @@ export function createController({ views, engine, probeEngine, toast, applyTheme
     },
 
     menuState() {
-      return { showLegalMoves: settings.showLegalMoves, winChance: settings.winChance, darkTheme };
+      return { showLegalMoves: settings.showLegalMoves, winChance: settings.winChance, sound: settings.sound, darkTheme };
     },
 
     /** The engine client switched to the stub (or found no engine at all). */

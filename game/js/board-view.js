@@ -5,7 +5,7 @@
  * Layers inside the board element, bottom to top:
  *   .squares    64 static cells carrying the highlight classes and coordinate labels
  *   .pieces     one absolutely positioned element per piece, moved with CSS transforms
- *   .arrows     an SVG overlay (best move, hint)
+ *   .arrows     an SVG overlay: the user's markings (right mouse button), best move, hint
  *   .promotion  the picker, shown while a pawn waits for its new piece
  *
  * @typedef {Object} BoardModel
@@ -16,6 +16,8 @@
  * @property {string|null} selected
  * @property {{square: string, capture: boolean}[]} targets legal destinations to mark
  * @property {{from: string, to: string}[]} arrows
+ * @property {{arrows: {from: string, to: string}[], squares: string[]}} marks   the user's own markings
+ * @property {{from: string, to: string}|null} markPreview the arrow being drawn right now
  * @property {boolean} interactive                          false while the board is locked
  */
 
@@ -43,8 +45,9 @@ function squareAtCell(col, row, orientation) {
   return orientation === 'w' ? `${FILES[col]}${8 - row}` : `${FILES[7 - col]}${row + 1}`;
 }
 
+/** a1 is dark and h1 light: each player has a light square at the bottom right. */
 function isLightSquare(square) {
-  return (FILES.indexOf(square[0]) + Number(square[1])) % 2 === 1;
+  return (FILES.indexOf(square[0]) + Number(square[1])) % 2 === 0;
 }
 
 function cellDistance(a, b, orientation) {
@@ -100,6 +103,7 @@ export function createBoardView(root) {
   }
 
   function markSquares(model) {
+    const marked = new Set(model.marks?.squares ?? []);
     const targets = new Map(model.targets.map((target) => [target.square, target.capture]));
     for (const [square, cell] of squareNodes) {
       const list = cell.classList;
@@ -109,6 +113,7 @@ export function createBoardView(root) {
       list.toggle('target', targets.get(square) === false);
       list.toggle('target-capture', targets.get(square) === true);
       list.toggle('hover', hoverSquare === square);
+      list.toggle('marked', marked.has(square));
     }
   }
 
@@ -217,28 +222,43 @@ export function createBoardView(root) {
 
   // -- arrows -----------------------------------------------------------------
 
-  function arrowShape({ from, to }) {
+  /**
+   * One arrow. Knight moves bend: the arrow runs along the longer leg first, then turns, the
+   * way the knight is usually pictured. `kind` is 'engine' (best move, hint) or 'mark'.
+   */
+  function arrowShape({ from, to }, kind) {
     const start = cellOf(from, orientation);
     const end = cellOf(to, orientation);
     const x1 = start.col + 0.5;
     const y1 = start.row + 0.5;
     const x2 = end.col + 0.5;
     const y2 = end.row + 0.5;
-    const length = Math.hypot(x2 - x1, y2 - y1) || 1;
-    const ux = (x2 - x1) / length;
-    const uy = (y2 - y1) / length;
-    const head = 0.42;
+    const dx = Math.abs(x2 - x1);
+    const dy = Math.abs(y2 - y1);
+    const knight = (dx === 1 && dy === 2) || (dx === 2 && dy === 1);
+    const points = [[x1, y1]];
+    if (knight) points.push(dy === 2 ? [x1, y2] : [x2, y1]);
+    points.push([x2, y2]);
+
+    const mark = kind === 'mark';
+    const head = mark ? 0.46 : 0.42;
+    const half = mark ? 0.27 : 0.24;
+    const gap = mark ? 0.12 : 0.2;   // the line starts this far from the centre of the first square
+
+    const unit = (a, b) => {
+      const length = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      return [(b[0] - a[0]) / length, (b[1] - a[1]) / length];
+    };
+    const [sx, sy] = unit(points[0], points[1]);
+    const [ux, uy] = unit(points[points.length - 2], points[points.length - 1]);
     const baseX = x2 - ux * head;
     const baseY = y2 - uy * head;
-    const half = 0.24;
+    const line = [[x1 + sx * gap, y1 + sy * gap], ...points.slice(1, -1), [baseX, baseY]];
 
     const group = document.createElementNS(SVG_NS, 'g');
-    group.setAttribute('class', 'arrow');
-    const shaft = document.createElementNS(SVG_NS, 'line');
-    shaft.setAttribute('x1', x1 + ux * 0.2);
-    shaft.setAttribute('y1', y1 + uy * 0.2);
-    shaft.setAttribute('x2', baseX);
-    shaft.setAttribute('y2', baseY);
+    group.setAttribute('class', mark ? 'arrow mark' : 'arrow');
+    const shaft = document.createElementNS(SVG_NS, 'path');
+    shaft.setAttribute('d', line.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join(' '));
     const tip = document.createElementNS(SVG_NS, 'polygon');
     tip.setAttribute(
       'points',
@@ -248,8 +268,15 @@ export function createBoardView(root) {
     return group;
   }
 
-  function drawArrows(arrows) {
-    arrowsLayer.replaceChildren(...arrows.map(arrowShape));
+  function drawArrows(model) {
+    const marks = (model.marks?.arrows ?? []).map((arrow) => arrowShape(arrow, 'mark'));
+    if (model.markPreview) {
+      const preview = arrowShape(model.markPreview, 'mark');
+      preview.classList.add('preview');
+      marks.push(preview);
+    }
+    // The engine's arrow is drawn last, on top of the user's markings.
+    arrowsLayer.replaceChildren(...marks, ...model.arrows.map((arrow) => arrowShape(arrow, 'engine')));
   }
 
   // -- promotion picker ---------------------------------------------------------
@@ -317,7 +344,7 @@ export function createBoardView(root) {
       if (flipped) buildSquares(model.orientation);
       markSquares(model);
       syncPieces(model.board, model.lastMove, flipped);
-      drawArrows(model.arrows);
+      drawArrows(model);
       root.classList.toggle('is-locked', !model.interactive);
     },
 

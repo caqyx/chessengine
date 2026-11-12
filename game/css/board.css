@@ -49,6 +49,11 @@
   color: var(--coord-on-dark);
 }
 
+/* A square marked with the right mouse button; drawn over the square colour, under the tints. */
+.square.marked {
+  background-image: linear-gradient(var(--mark-square), var(--mark-square));
+}
+
 .coord {
   position: absolute;
   z-index: 1;
@@ -203,10 +208,32 @@
   opacity: 0.88;
 }
 
-.arrow line {
+.arrow path {
+  fill: none;
   stroke: var(--accent);
   stroke-width: 0.17;
   stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The user's own markings (right mouse button): orange arrows, red squares. */
+.arrow.mark {
+  opacity: 0.8;
+}
+
+.arrow.mark path {
+  stroke: var(--mark-arrow);
+  stroke-width: 0.2;
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
+}
+
+.arrow.mark polygon {
+  fill: var(--mark-arrow);
+}
+
+.arrow.mark.preview {
+  opacity: 0.5;
 }
 
 .arrow polygon {

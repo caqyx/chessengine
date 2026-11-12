@@ -15,6 +15,8 @@ export const DEFAULT_SETTINGS = {
   showLegalMoves: true,
   /** The win-chance indicator under the status line. */
   winChance: true,
+  /** Sound effects for moves, captures, checks, game start and end, low time. */
+  sound: true,
   /** Options last used in the New game dialog. */
   newGame: null,
 };
@@ -44,6 +46,7 @@ export function loadSettings() {
   settings.flipped = settings.flipped === true;
   settings.showLegalMoves = settings.showLegalMoves !== false;
   settings.winChance = settings.winChance !== false;
+  settings.sound = settings.sound !== false;
   return settings;
 }
 

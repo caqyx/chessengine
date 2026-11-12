@@ -11,6 +11,14 @@
  *   isTarget(from, to)     -> true when from -> to is a legal move
  *   select(square | null)  -> change the selection (the controller re-renders)
  *   move(from, to)         -> play the move (the controller may first ask for a promotion piece)
+ *
+ * Markings with the right mouse button (computer only), as on chess.com:
+ *   right-click a square            -> highlight it (again: remove)
+ *   right-press, drag, release      -> arrow between two squares (again: remove)
+ *   any left press on the board     -> clear all markings
+ *   clearMarks()                    -> remove all markings
+ *   previewMark(from, to | null)    -> show the arrow being drawn
+ *   toggleMark(from, to)            -> add or remove a highlight (from === to) or an arrow
  */
 
 const DRAG_THRESHOLD_MOUSE = 4;
@@ -24,13 +32,53 @@ export function attachBoardInput(view, hooks) {
   const board = view.element;
   /** The press in progress: { pointerId, square, node, startX, startY, dragging, wasSelected, touch } */
   let press = null;
+  /** A marking being drawn with the right mouse button: { pointerId, from, over } */
+  let marking = null;
+
+  function startMarking(event) {
+    if (press) return;
+    const square = view.squareAt(event.clientX, event.clientY);
+    if (!square) return;
+    event.preventDefault();
+    marking = { pointerId: event.pointerId, from: square, over: square };
+    try {
+      board.setPointerCapture(event.pointerId);
+    } catch {
+      // without capture the marking still works while the pointer stays over the board
+    }
+  }
+
+  function moveMarking(event) {
+    const over = view.squareAt(event.clientX, event.clientY);
+    if (over === marking.over) return;
+    marking.over = over;
+    hooks.previewMark(marking.from, over && over !== marking.from ? over : null);
+  }
+
+  function endMarking(event) {
+    const finished = marking;
+    marking = null;
+    try {
+      board.releasePointerCapture(event.pointerId);
+    } catch {
+      // already released
+    }
+    hooks.previewMark(finished.from, null);
+    const to = view.squareAt(event.clientX, event.clientY);
+    if (to) hooks.toggleMark(finished.from, to);
+  }
 
   function onPointerDown(event) {
+    if (event.pointerType === 'mouse' && event.button === 2) {
+      startMarking(event);
+      return;
+    }
     if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
     if (event.target.closest('.promotion')) return;
     const square = view.squareAt(event.clientX, event.clientY);
     if (!square) return;
     event.preventDefault();
+    hooks.clearMarks();
 
     const selected = hooks.selection();
     if (selected && selected !== square && hooks.isTarget(selected, square)) {
@@ -60,6 +108,10 @@ export function attachBoardInput(view, hooks) {
   }
 
   function onPointerMove(event) {
+    if (marking && event.pointerId === marking.pointerId) {
+      moveMarking(event);
+      return;
+    }
     if (!press || event.pointerId !== press.pointerId || !press.node) return;
     if (!press.dragging) {
       const distance = Math.hypot(event.clientX - press.startX, event.clientY - press.startY);
@@ -74,6 +126,10 @@ export function attachBoardInput(view, hooks) {
   }
 
   function onPointerUp(event) {
+    if (marking && event.pointerId === marking.pointerId) {
+      if (event.button === 2) endMarking(event);
+      return;
+    }
     if (!press || event.pointerId !== press.pointerId) return;
     const finished = press;
     endPress();
@@ -92,6 +148,11 @@ export function attachBoardInput(view, hooks) {
   }
 
   function onPointerCancel(event) {
+    if (marking && event.pointerId === marking.pointerId) {
+      hooks.previewMark(marking.from, null);
+      marking = null;
+      return;
+    }
     if (!press || event.pointerId !== press.pointerId) return;
     const cancelled = press;
     endPress();

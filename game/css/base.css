@@ -21,6 +21,9 @@
   --danger: #a8402f;
 
   --sq-light: #e1e2db;
+  /* User markings, deliberately bright so they stand out (as on chess.com). */
+  --mark-arrow: #ffaa00;
+  --mark-square: rgba(235, 97, 80, 0.8);
   --sq-dark: #9aa6ab;
   --coord-on-light: #6f7b80;
   --coord-on-dark: #eef0ea;
