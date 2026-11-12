@@ -1,7 +1,8 @@
 # Training on your own computer
 
-The goal is a neural-network evaluation trained only on Tessera's own games.
-That needs about 100 million positions. The repository holds 8 million; the
+The networks up to the second one were trained only on Tessera's own games; the current one also learned from
+Stockfish evaluations of Lichess positions (see the optional Lichess section below).
+A good network needs tens of millions of positions; 100 million is a comfortable amount. The repository holds 8 million; the
 rest is generated on your machine with the script below. It can be stopped and
 continued as often as you like.
 
