@@ -84,6 +84,7 @@ static int pack_file(const char* inPath, const char* outPath) {
 }
 
 #include "lichess_import.h"
+#include "lessons.h"
 
 int main(int argc, char** argv) {
     engine_init();
@@ -114,6 +115,12 @@ int main(int argc, char** argv) {
         if (cmd == "quit") break;
         if (cmd == "stop") { finish(true); continue; }
         if (cmd == "isready") { plat_out("readyok"); continue; }
+        if (cmd == "lessons" || cmd == "exam") {      // native-only commands that read and write files
+            finish(true);
+            SearchStop = false;
+            if (cmd == "lessons") lessons_run(line.substr(a)); else exam_run(line.substr(a));
+            continue;
+        }
         if (cmd == "go") {
             finish(true);
             SearchStop = false;

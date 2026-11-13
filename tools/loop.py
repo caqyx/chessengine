@@ -64,6 +64,10 @@ DEFAULTS = {
     "elo0": 0.0, "elo1": 10.0, "alpha": 0.05, "beta": 0.05,
     "max_pairs": 1500,        # 3000 games: a gate that is still undecided then keeps the old network
     "gpu": False,             # train with tools/train_gpu.py on the GPU instead of engine/trainer
+    "lessons": 0,             # mistake school: positions per round re-searched deeply (0 = off)
+    "lesson_nodes": 100000,   # search per lesson (the games use 5,000)
+    "lesson_weight": 3,       # a lesson counts as this many ordinary positions in training
+    "lesson_gap": 150,        # a mistake = evaluation off by this much win probability (thousandths)
 }
 
 STOP = threading.Event()      # Ctrl+C
@@ -212,6 +216,123 @@ def generate(state, threads):
     return False
 
 
+# ---------------------------------------------------------------------------- 1b. review (mistake school)
+
+def lessons_dir(v):
+    return os.path.join(version_dir(v), "lessons")
+
+
+def exam_dir(v):
+    return os.path.join(version_dir(v), "exam")
+
+
+def engine_script(net, commands):
+    """Runs engine commands with a network file loaded; returns the Popen object."""
+    script = f"setoption name EvalFile value {rel(net)}\n" + "\n".join(commands) + "\nquit\n"
+    proc = subprocess.Popen([ENGINE], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                            text=True, cwd=ROOT, **own_group())
+    proc.stdin.write(script)
+    proc.stdin.close()
+    return proc
+
+
+def review(state, threads):
+    """The best network re-searches, far deeper, the positions of its own games that it misjudged.
+    Confirmed mistakes become lessons (extra-weight training positions) and unseen exam positions.
+    One engine per game file; a finished file is never redone unless games were added to it."""
+    v, s = state["version"], state["settings"]
+    if not s.get("lessons"):
+        return True
+    sources = [f for f in text_sources(absp(state["rounds"][str(v)]["data"])) if f.endswith(".txt")]
+    os.makedirs(lessons_dir(v), exist_ok=True)
+    os.makedirs(exam_dir(v), exist_ok=True)
+    manifest_path = os.path.join(lessons_dir(v), "manifest.json")
+    manifest = load_json(manifest_path, {})
+    per_file = max(1, s["lessons"] // max(1, s["positions"] // 1_000_000))
+    todo = []
+    for src in sources:
+        name = os.path.basename(src)
+        stamp = [os.path.getsize(src), int(os.path.getmtime(src))]
+        if manifest.get(name, {}).get("stamp") != stamp:
+            todo.append((src, name, stamp))
+    print(f"\n== Round {v}, mistake school: network v{v:02d} re-checks its own games with {s['lesson_nodes']:,} nodes per position "
+          f"({per_file:,} per file, {len(todo)} of {len(sources)} files to do)", flush=True)
+    lock = threading.Lock()
+    running = set()
+    queue = list(todo)
+    failed = []
+
+    def worker():
+        while not STOP.is_set():
+            with lock:
+                if not queue:
+                    return
+                src, name, stamp = queue.pop(0)
+            out = os.path.join(lessons_dir(v), name)
+            exam = os.path.join(exam_dir(v), name)
+            cmd = f"lessons {rel(src)} {rel(out)}.tmp {rel(exam)}.tmp {s['lesson_nodes']} {per_file} {s['lesson_gap']}"
+            proc = engine_script(net_path(v), ["setoption name Hash value 64", cmd])
+            with lock:
+                running.add(proc)
+            text = proc.stdout.read()
+            proc.wait()
+            with lock:
+                running.discard(proc)
+            if STOP.is_set():
+                return
+            line = next((l for l in text.splitlines() if l.startswith("lessons positions=")), None)
+            if line is None:
+                failed.append(name + ": " + (text.strip().splitlines() or ["no output"])[-1])
+                STOP.set()
+                return
+            info = dict(p.split("=") for p in line.split()[1:])
+            os.replace(out + ".tmp", out)
+            os.replace(exam + ".tmp", exam)
+            with lock:
+                manifest[name] = {"stamp": stamp, "written": int(info["written"]), "exam": int(info["exam"]),
+                                  "candidates": int(info["candidates"]), "positions": int(info["positions"])}
+                save_json(manifest_path, manifest)
+                done = len(todo) - len(queue) - len(running)
+                print(f"  {done}/{len(todo)} files: {name}: {int(info['candidates']):,} suspicious of {int(info['positions']):,}, "
+                      f"{int(info['written']) + int(info['exam']):,} confirmed mistakes", flush=True)
+
+    n = max(1, (threads or os.cpu_count() or 2) - 1)
+    workers = [threading.Thread(target=worker, daemon=True) for _ in range(min(n, max(1, len(todo))))]
+    for t in workers:
+        t.start()
+    while any(t.is_alive() for t in workers):
+        time.sleep(0.5)
+        if STOP.is_set():
+            with lock:
+                for p in list(running):
+                    p.kill()             # an unfinished file is redone next time
+    if failed:
+        sys.exit("Mistake school failed: " + failed[0] + "\n(If the engine does not know 'lessons', download the newest tessera.exe.)")
+    if STOP.is_set():
+        return False
+    total = sum(m["written"] for m in manifest.values())
+    print(f"  {total:,} lessons and {sum(m['exam'] for m in manifest.values()):,} exam positions in this round", flush=True)
+    return True
+
+
+def run_exam(state, net):
+    """Share of this round's unseen exam positions (past mistakes) that a network now judges right."""
+    v, s = state["version"], state["settings"]
+    files = [f for f in text_sources(exam_dir(v)) if os.path.getsize(f)]
+    if not s.get("lessons") or not files:
+        return None
+    proc = engine_script(net, [f"exam {rel(f)} {s['lesson_gap']}" for f in files])
+    text = proc.stdout.read()
+    proc.wait()
+    n = solved = 0
+    for line in text.splitlines():
+        if line.startswith("exam positions="):
+            info = dict(p.split("=") for p in line.split()[1:])
+            n += int(info["positions"])
+            solved += int(info["solved"])
+    return [solved, n] if n else None
+
+
 # ---------------------------------------------------------------------------- 2. pack
 
 def text_sources(folder):
@@ -270,6 +391,10 @@ def pack(state):
     if not pack_folder(absp(state["rounds"][str(v)]["data"]), os.path.join(version_dir(v), "packed")):
         return False
     print(f"  {records_in(os.path.join(version_dir(v), 'packed')):,} positions ready", flush=True)
+    if state["settings"].get("lessons") and os.path.isdir(lessons_dir(v)):
+        if not pack_folder(lessons_dir(v), os.path.join(version_dir(v), "lessons-packed")):
+            return False
+        print(f"  {records_in(os.path.join(version_dir(v), 'lessons-packed')):,} lessons ready", flush=True)
     return True
 
 
@@ -314,6 +439,11 @@ def train(state, threads):
         packed = os.path.join(version_dir(v - k), "packed")
         if v - k >= 1 and records_in(packed):
             folders.append(packed)
+    if s.get("lessons"):
+        for k in range(s["window"]):
+            packed = os.path.join(version_dir(v - k), "lessons-packed")
+            if v - k >= 1 and records_in(packed):
+                folders += [packed] * max(1, s["lesson_weight"])     # listed several times = counts several times
     extra = extra_folders(state)
     if extra is None:
         return False
@@ -321,8 +451,9 @@ def train(state, threads):
     total = sum(records_in(f) for f in folders)
     out = train_dir(state)
     print(f"\n== Round {v}, step 3/4: training network v{v + 1:02d} (attempt {state['attempt']}) on {total:,} positions", flush=True)
-    for f in folders:
-        print(f"  {rel(f)}: {records_in(f):,}", flush=True)
+    for f in dict.fromkeys(folders):
+        times = folders.count(f)
+        print(f"  {rel(f)}: {records_in(f):,}" + (f"  x{times}" if times > 1 else ""), flush=True)
     if s.get("gpu"):
         cmd = [sys.executable, os.path.join(TOOLS, "train_gpu.py"), "--data", ",".join(folders), "--out", out,
                "--hidden", str(s["hidden"]), "--epochs", str(s["epochs"])]
@@ -526,6 +657,13 @@ def gate(state, threads, cand_net=None, best_net=None, gate_file=None, label=Non
                                  "wdl": [0, 0, 0], "decision": None}
     if g["decision"]:
         return g["decision"]
+    if "exam" not in g and gate_file.startswith(LOOP):
+        g["exam"] = {"new": run_exam(state, cand_net), "best": run_exam(state, best_net)}
+        save_json(gate_file, g)
+        if g["exam"]["new"]:
+            (a, n), (b, _) = g["exam"]["new"], g["exam"]["best"]
+            log(f"Mistake exam (round {v}, {n:,} unseen mistakes of v{v:02d}): the new network gets {100 * a / n:.1f}% right "
+                f"(v{v:02d}: {100 * b / n:.1f}%)")
     lower = math.log(s["beta"] / (1 - s["alpha"]))
     upper = math.log((1 - s["beta"]) / s["alpha"])
     print(f"\n== Round {v}, step 4/4: gate match {label}, {s['match_nodes']:,} nodes per move", flush=True)
@@ -624,7 +762,7 @@ def finish_gate(state, decision):
     games = 2 * sum(g["penta"])
     entry = {"round": v, "attempt": state["attempt"], "games": games, "elo": round(elo, 1), "error": round(err, 1),
              "llr": round(llr, 2), "result": decision, "date": time.strftime("%Y-%m-%d %H:%M"),
-             "positions": records_in(os.path.join(version_dir(v), "packed"))}
+             "positions": records_in(os.path.join(version_dir(v), "packed")), "exam": (g.get("exam") or {}).get("new")}
     if decision == "pass":
         copy_atomic(os.path.join(train_dir(state), "tessera.nnue"), net_path(v + 1))
         copy_atomic(net_path(v + 1), os.path.join(LOOP, "best.nnue"))
@@ -659,8 +797,10 @@ def show_status(state):
     if state["history"]:
         print("\nround attempt   games      Elo        result    date")
         for h in state["history"]:
+            ex = h.get("exam")
             print(f"{h['round']:5d} {h['attempt']:7d} {h['games']:7d}  {h['elo']:+6.1f} +-{h['error']:<5.1f}  "
-                  f"{'promoted' if h['result'] == 'pass' else 'kept old':9s} {h['date']}")
+                  f"{'promoted' if h['result'] == 'pass' else 'kept old':9s} {h['date']}"
+                  + (f"   exam {100 * ex[0] / ex[1]:.1f}% of {ex[1]:,} past mistakes fixed" if ex else ""))
     for key in sorted(state["rounds"], key=int):
         sec = state["rounds"][key].get("seconds", {})
         if sec:
@@ -686,6 +826,10 @@ def parse_args():
     st.add_argument("--match-nodes", type=int, help=f"search per move in the gate match (default {DEFAULTS['match_nodes']})")
     st.add_argument("--elo1", type=float, help=f"Elo gain the gate tests for (default {DEFAULTS['elo1']:g})")
     st.add_argument("--max-pairs", type=int, help=f"gate limit in pairs of games (default {DEFAULTS['max_pairs']})")
+    st.add_argument("--lessons", type=int, help="mistake school: positions per round the best network re-searches deeply "
+                                                "and learns from (0 = off; try 500000)")
+    st.add_argument("--lesson-nodes", type=int, help=f"search per lesson (default {DEFAULTS['lesson_nodes']:,})")
+    st.add_argument("--lesson-weight", type=int, help=f"how many ordinary positions one lesson counts as (default {DEFAULTS['lesson_weight']})")
     st.add_argument("--gpu", action="store_true", help="train on the GPU with tools/train_gpu.py (needs PyTorch with CUDA)")
     st.add_argument("--cpu", action="store_true", help="train with engine/trainer on the CPU again")
     return ap.parse_args()
@@ -708,7 +852,7 @@ def main():
     _lock = acquire_lock()
 
     changes = {k: getattr(args, k) for k in ("positions", "more", "gen_nodes", "window", "epochs", "hidden",
-                                             "match_nodes", "elo1", "max_pairs") if getattr(args, k) is not None}
+                                             "match_nodes", "elo1", "max_pairs", "lessons", "lesson_nodes", "lesson_weight") if getattr(args, k) is not None}
     if args.extra_data is not None:
         changes["extra"] = [rel(f) for f in args.extra_data]
     if args.gpu or args.cpu:
@@ -740,7 +884,8 @@ def main():
 
     print(f"Self-improvement loop. Best network: v{state['version']:02d}. Ctrl+C stops it; run the same command to continue.")
     gates = 0
-    steps = {"generate": (lambda: generate(state, args.threads), "pack"),
+    steps = {"generate": (lambda: generate(state, args.threads), "review"),
+             "review": (lambda: review(state, args.threads), "pack"),
              "pack": (lambda: pack(state), "train"),
              "train": (lambda: train(state, args.threads), "gate")}
     while not STOP.is_set():

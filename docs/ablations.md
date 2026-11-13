@@ -194,6 +194,25 @@ slower to evaluate: about 1.67 million nodes per second against 2.17 million.
 With other targets the 7-million network was much weaker (half result, half
 score: -147; score only: -56), see `docs/training.md`.
 
+## Mistake school (lessons from the network's own deep search)
+
+First measurement, small scale: a 256-unit network trained 4 passes on 2.5 million
+self-play positions; 20,000 suspicious positions re-searched with 100,000 nodes
+by that same network, 10,100 confirmed as mistakes and added 3 times; trained
+again the same way.
+
+| Test | Result |
+|---|---|
+| With lessons vs without, 400 games, 5,000 nodes per move | +140 =120 -140, **0 Elo [-29, +29]** |
+| Exam: 531 unseen confirmed mistakes judged right | 0 of 531 without lessons, 0 of 531 with |
+
+No measurable effect. The likely reason: most confirmed "mistakes" are positions
+where a tactic is pending a few moves ahead. A deep search sees it; an instant
+evaluation cannot represent it, however it is trained, so those positions are not
+learnable lessons for the network (seeing them is the search's job). The step is
+therefore off by default (`--lessons 0`). It has not been measured at full scale
+(tens of millions of positions, 24 passes).
+
 ## What these numbers do not say
 
 They compare Tessera with itself. They say nothing about absolute strength;

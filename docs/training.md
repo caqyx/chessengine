@@ -263,6 +263,41 @@ On Linux use `python3 tools/loop.py` and forward slashes.
 - To put the best network into the engine and the website, use step 3 with
   `loop/best.nnue`.
 
+## Mistake school (optional step of the loop)
+
+An idea of the project's owner, in the form that keeps Tessera its own teacher:
+after a round's games are played, the best network goes back over them and finds
+the positions it misjudged, and the next network studies those harder.
+
+1. **Suspicious positions:** in every game file, positions where the network's
+   instant evaluation and the game's search score disagree by at least 15
+   percentage points of win probability.
+2. **The teacher is deep Tessera:** a sample of them (spread evenly over the
+   file) is searched again with 100,000 nodes, 20 times deeper than the games.
+3. **Lessons:** where the deep search confirms the network was wrong, the position
+   is added to the training data with the deep score, counted 3 times.
+4. **Exam:** every 20th confirmed mistake is kept out of training. Before each
+   gate match the loop reports how many of these unseen mistakes the new network
+   now judges right, next to the old network's share: the "mistakes it no longer
+   makes" score.
+
+No other engine is involved: the teacher is the same engine with more thinking
+time, and it gets stronger each time the network does.
+
+```powershell
+python tools\loop.py --lessons 500000     # turn it on: 500,000 positions re-searched per round (remembered)
+python tools\loop.py --lessons 0          # turn it off again
+python tools\loop.py --status             # the history shows each exam result
+```
+
+Cost: about 0.05 s per position per CPU thread, so 500,000 positions take roughly
+40 minutes on 12 threads. It needs a `tessera.exe` from 14 November 2026 or newer
+(the `lessons` and `exam` commands). **It is experimental and off by default.** The first, small measurement found no
+gain: 0 Elo [-29, +29] over 400 games, and none of 531 exam positions fixed (see
+`docs/ablations.md`). Most confirmed mistakes turned out to be pending tactics,
+which an instant evaluation cannot learn to see. It has not been measured at
+full scale.
+
 ## GPU training (NVIDIA graphics card)
 
 `tools/train_gpu.py` trains exactly the same network as the CPU trainer (same
