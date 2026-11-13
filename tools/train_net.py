@@ -9,7 +9,7 @@ What it does:
   1. Converts every data file to the compact form the trainer reads
      (data/*.txt.xz and data/local/*.txt  ->  data/packed/*.bin). Files that
      have not changed since the last run are skipped.
-  2. Runs the trainer (CPU, all threads). After every pass over the data it
+  2. Runs the trainer (CPU, all threads; with --gpu tools/train_gpu.py on the GPU). After every pass over the data it
      checks the network on games it never trained on and keeps the best one
      in nets/tessera.nnue.
 
@@ -38,6 +38,7 @@ def parse_args():
     ap.add_argument("--threads", type=int, default=os.cpu_count() or 2)
     ap.add_argument("--out", default=os.path.join(ROOT, "nets"), help="where the network and checkpoint go")
     ap.add_argument("--fresh", action="store_true", help="forget earlier training progress and start over")
+    ap.add_argument("--gpu", action="store_true", help="train on the NVIDIA GPU with tools/train_gpu.py (needs PyTorch with CUDA)")
     ap.add_argument("--data", nargs="+", metavar="FOLDER",
                     help="train only on the data in these folders (default: data and data/local)")
     return ap.parse_args()
@@ -107,7 +108,8 @@ def pack_all(engine, packed_dir, folders):
 def main():
     args = parse_args()
     engine = need(os.path.join(ROOT, "engine", "tessera" + EXE), "Build it:  make -C engine   (Windows: see docs/training.md)")
-    trainer = need(os.path.join(ROOT, "engine", "trainer" + EXE), "Build it:  make -C engine trainer   (Windows: see docs/training.md)")
+    if not args.gpu:
+        trainer = need(os.path.join(ROOT, "engine", "trainer" + EXE), "Build it:  make -C engine trainer   (Windows: see docs/training.md)")
     if args.data:
         folders = [os.path.abspath(f) for f in args.data]
         # A separate packed folder per selection, so switching between selections never repacks.
@@ -124,13 +126,17 @@ def main():
         sys.exit("No data found in: " + ", ".join(os.path.relpath(f, ROOT) for f in folders))
     data_arg = ",".join(([packed] if has_packed else []) + ready)
     if args.fresh and os.path.isdir(args.out):
-        for name in ("checkpoint.bin", "tessera.nnue"):
+        for name in ("checkpoint.bin", "checkpoint-gpu.pt", "status.json", "tessera.nnue"):
             path = os.path.join(args.out, name)
             if os.path.exists(path):
                 os.unlink(path)
 
-    cmd = [trainer, "--data", data_arg, "--out", args.out, "--hidden", str(args.hidden),
-           "--epochs", str(args.epochs), "--threads", str(args.threads)]
+    if args.gpu:
+        cmd = [sys.executable, os.path.join(ROOT, "tools", "train_gpu.py"), "--data", data_arg, "--out", args.out,
+               "--hidden", str(args.hidden), "--epochs", str(args.epochs)]
+    else:
+        cmd = [trainer, "--data", data_arg, "--out", args.out, "--hidden", str(args.hidden),
+               "--epochs", str(args.epochs), "--threads", str(args.threads)]
     proc = subprocess.Popen(cmd)
     # Ctrl+C goes to the trainer as well; it finishes its current step, saves and exits. Just wait for it.
     signal.signal(signal.SIGINT, lambda *_: None)

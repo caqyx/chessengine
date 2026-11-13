@@ -263,6 +263,50 @@ On Linux use `python3 tools/loop.py` and forward slashes.
 - To put the best network into the engine and the website, use step 3 with
   `loop/best.nnue`.
 
+## GPU training (NVIDIA graphics card)
+
+`tools/train_gpu.py` trains exactly the same network as the CPU trainer (same
+inputs, targets, loss, optimizer, learning-rate decay and `.nnue` output), but on
+the graphics card, and it reads the training records from disk as it goes instead
+of loading them all into memory. So:
+
+- **no memory limit:** the amount of data is limited by disk space, not RAM. All
+  of the Lichess file (roughly 250 million positions) plus your own rounds works
+  on a 32 GB PC;
+- **faster passes** on any recent NVIDIA card (an RTX 3060 is plenty).
+
+Tested against the CPU trainer on the same 2.5 million positions: held-out loss
+0.04336 vs 0.04349 after 4 passes, and the two networks drew their match
+(+21 Elo [-22, +65] over 200 games). The network it computes matches the engine's
+own evaluation to within 1 centipawn, and stopping and continuing gives a
+byte-identical network.
+
+Install once (PyTorch with CUDA, about 3 GB):
+
+```powershell
+pip install torch --index-url https://download.pytorch.org/whl/cu130                       # PyTorch for NVIDIA GPUs
+python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"  # should print: True NVIDIA GeForce RTX 3060
+```
+
+If it prints `False`, update the NVIDIA driver (CUDA 13 needs a driver from
+2025 or newer), or use the older CUDA 12.6 build:
+`pip install torch --index-url https://download.pytorch.org/whl/cu126`.
+
+Then add `--gpu` to the usual training command, or to the loop:
+
+```powershell
+python tools\train_net.py --data data\round3 data\lichess --out nets-gpu --gpu   # same as before, on the GPU
+python tools\loop.py --gpu                                                     # the loop trains on the GPU from now on (--cpu switches back)
+```
+
+Ctrl+C stops it after the current step; the same command continues exactly where
+it stopped. The files it writes are `tessera.nnue` (the best network so far),
+`checkpoint-gpu.pt` and `status.json` in the `--out` folder.
+
+Speed depends on the disk as well as the GPU: each pass reads all the records
+(68 bytes per position), so data on an SSD is best. The progress line shows
+positions per second and the minutes left in the pass.
+
 ## Step 3: put a better network into the engine
 
 The engine ships with the network in `engine/net/tessera.nnue`. To replace it

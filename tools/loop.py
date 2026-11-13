@@ -63,6 +63,7 @@ DEFAULTS = {
     "match_nodes": 40000,     # search per move in the gate match (about 20 ms)
     "elo0": 0.0, "elo1": 10.0, "alpha": 0.05, "beta": 0.05,
     "max_pairs": 1500,        # 3000 games: a gate that is still undecided then keeps the old network
+    "gpu": False,             # train with tools/train_gpu.py on the GPU instead of engine/trainer
 }
 
 STOP = threading.Event()      # Ctrl+C
@@ -295,7 +296,9 @@ def train_dir(state):
     return os.path.join(version_dir(state["version"]), f"train-{state['attempt']}")
 
 
-def checkpoint_epoch(folder):
+def checkpoint_epoch(folder, gpu=False):
+    if gpu:
+        return (load_json(os.path.join(folder, "status.json")) or {}).get("passes_done", 0)   # tools/train_gpu.py
     path = os.path.join(folder, "checkpoint.bin")
     if not os.path.exists(path):
         return 0
@@ -320,14 +323,18 @@ def train(state, threads):
     print(f"\n== Round {v}, step 3/4: training network v{v + 1:02d} (attempt {state['attempt']}) on {total:,} positions", flush=True)
     for f in folders:
         print(f"  {rel(f)}: {records_in(f):,}", flush=True)
-    need, have = total * (RECORD_BYTES + 8), memory_bytes()
-    print(f"  needs about {need / 2**30:.1f} GB of memory" + (f" (this PC has {have / 2**30:.0f} GB)" if have else ""), flush=True)
-    if have and need > 0.9 * have:
-        print("  Warning: that is close to all of it; lower --window or remove an --extra-data folder if training fails.")
-    cmd = [TRAINER, "--data", ",".join(folders), "--out", out, "--hidden", str(s["hidden"]),
-           "--epochs", str(s["epochs"]), "--threads", str(threads or os.cpu_count() or 2)]
+    if s.get("gpu"):
+        cmd = [sys.executable, os.path.join(TOOLS, "train_gpu.py"), "--data", ",".join(folders), "--out", out,
+               "--hidden", str(s["hidden"]), "--epochs", str(s["epochs"])]
+    else:
+        need, have = total * (RECORD_BYTES + 8), memory_bytes()
+        print(f"  needs about {need / 2**30:.1f} GB of memory" + (f" (this PC has {have / 2**30:.0f} GB)" if have else ""), flush=True)
+        if have and need > 0.9 * have:
+            print("  Warning: that is close to all of it; lower --window, remove an --extra-data folder or use --gpu.")
+        cmd = [TRAINER, "--data", ",".join(folders), "--out", out, "--hidden", str(s["hidden"]),
+               "--epochs", str(s["epochs"]), "--threads", str(threads or os.cpu_count() or 2)]
     code = subprocess.call(cmd)       # it gets Ctrl+C too, saves its checkpoint and exits
-    if checkpoint_epoch(out) >= s["epochs"] and os.path.exists(os.path.join(out, "tessera.nnue")):
+    if checkpoint_epoch(out, s.get("gpu")) >= s["epochs"] and os.path.exists(os.path.join(out, "tessera.nnue")):
         return True
     if code != 0 and not STOP.is_set():
         sys.exit(f"Training stopped with an error (code {code}); see the message above.")
@@ -679,6 +686,8 @@ def parse_args():
     st.add_argument("--match-nodes", type=int, help=f"search per move in the gate match (default {DEFAULTS['match_nodes']})")
     st.add_argument("--elo1", type=float, help=f"Elo gain the gate tests for (default {DEFAULTS['elo1']:g})")
     st.add_argument("--max-pairs", type=int, help=f"gate limit in pairs of games (default {DEFAULTS['max_pairs']})")
+    st.add_argument("--gpu", action="store_true", help="train on the GPU with tools/train_gpu.py (needs PyTorch with CUDA)")
+    st.add_argument("--cpu", action="store_true", help="train with engine/trainer on the CPU again")
     return ap.parse_args()
 
 
@@ -692,6 +701,8 @@ def main():
         show_status(state)
         return
     for path, hint in ((ENGINE, "the engine"), (TRAINER, "the trainer")):
+        if path == TRAINER and (args.gpu or (state and state["settings"].get("gpu"))) and not args.cpu:
+            continue
         if not os.path.exists(path):
             sys.exit(f"Missing {path} ({hint}). See docs/training.md for how to build or download it.")
     _lock = acquire_lock()
@@ -700,6 +711,8 @@ def main():
                                              "match_nodes", "elo1", "max_pairs") if getattr(args, k) is not None}
     if args.extra_data is not None:
         changes["extra"] = [rel(f) for f in args.extra_data]
+    if args.gpu or args.cpu:
+        changes["gpu"] = bool(args.gpu)
     if state is None:
         state = new_state(args, {**DEFAULTS, **changes})
     else:
